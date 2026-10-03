@@ -149,8 +149,68 @@ def summary(rds):
         parts.append(f"{rd.get('lafz') or rd['wasf']}{h}: {names_for(rd['rawis'])}")
     return " | ".join(parts)
 
+# ---------- check mode (no outputs; safe to run in parallel) ----------
+def _cmp(t):
+    """Comparison form: canonical marks, no sukun / Quranic marks, unified alef."""
+    t = canon(t).replace("ٱ", "ا")
+    t = re.sub(r"[ْٰۖ-ۭؐ-ؚ]", "", t)
+    return re.sub(r"[إأآ]", "ا", t).replace("ى", "ي")
+
+def check(files):
+    """python scripts/build_masail.py --check data/masail/X.yaml ...
+    Validates the given files: names, 14-rawi coverage, locations, tahwil, and that Hafs's reading
+    matches the mushaf text. Writes nothing."""
+    Q = load_quran()
+    matn = {v["n"]: v for v in json.loads((ROOT / "data" / "shatibiyya.json").read_text(encoding="utf8"))}
+    all_ids = {}
+    for f in sorted((ROOT / "data" / "masail").glob("*.yaml")):
+        for x in yaml.safe_load(f.read_text(encoding="utf8")) or []:
+            all_ids.setdefault(x["id"], []).append(f.name)
+    errors = warns = 0
+    for path in files:
+        print(f"== {path}")
+        try:
+            masail = yaml.safe_load(pathlib.Path(path).read_text(encoding="utf8")) or []
+        except yaml.YAMLError as e:
+            print(f"  ERROR yaml: {e}"); errors += 1; continue
+        for m in masail:
+            mid = m.get("id", "?")
+            try:
+                for key in ("id", "bayt", "qawl", "word", "scope", "loc", "readings"):
+                    if key not in m: raise SystemExit(f"missing field «{key}»")
+                if len(all_ids.get(mid, [])) > 1: raise SystemExit(f"duplicate id in {all_ids[mid]}")
+                for n in m["bayt"]:
+                    if n not in matn: raise SystemExit(f"bad bayt {n}")
+                rds = expand(m)
+                hits = locate(m, Q)
+                if not hits: raise SystemExit("no locations found")
+                span = m["loc"].get("span", 1)
+                bad = []
+                for (s, a), i in hits:
+                    ay = Q[(s, a)]
+                    base = " ".join(ay["voc"][i:i + span])
+                    for rd in rds:
+                        lf = lafz_at(rd, base)
+                        if "حفص" in rd["rawis"] and rd["hal"] == BOTH:   # hal-specific readings may differ from the rasm
+                            if "lafz" in rd:
+                                text = _cmp(" ".join(ay["voc"]))
+                                segs = [x.strip() for x in rd["lafz"].split("...") if x.strip()]
+                                if not all(_cmp(seg) in text for seg in segs):
+                                    bad.append(f"{s}:{a} حفص «{rd['lafz']}» ليس في نص الآية")
+                            elif _cmp(lf) != _cmp(base):
+                                bad.append(f"{s}:{a} حفص «{lf}» ≠ النص «{base}»")
+                print(f"  {mid:10} {len(hits):4} موضع  {m['word']}")
+                for b in bad[:5]:
+                    print(f"     WARN {b}"); warns += 1
+            except SystemExit as e:
+                print(f"  ERROR {mid}: {e}"); errors += 1
+    print(f"\n{errors} error(s), {warns} warning(s)")
+    sys.exit(1 if errors else 0)
+
 # ---------- main ----------
 def main():
+    if "--check" in sys.argv:
+        return check([a for a in sys.argv[1:] if a != "--check"])
     Q = load_quran()
     matn = {v["n"]: v for v in json.loads((ROOT / "data" / "shatibiyya.json").read_text(encoding="utf8"))}
     masail = []
