@@ -69,23 +69,29 @@ def locate(m, Q):
     loc = m["loc"]
     excl = [tuple(e) for e in loc.get("exclude", [])]
     default_tok = loc.get("search") or ("^" + loc["token"] + "$" if "token" in loc else ".")
-    if "at" in loc:
-        targets = [((a[0], a[1]), "^" + a[2] + "$" if len(a) > 2 else default_tok) for a in loc["at"]]
+    if "at" in loc:   # [sura, aya] | [sura, aya, "token"] | [sura, aya, "token", nth]
+        targets = [((a[0], a[1]), "^" + a[2] + "$" if len(a) > 2 else default_tok, a[3] if len(a) > 3 else loc.get("nth"))
+                   for a in loc["at"]]
     else:
         keys = [k for k in Q if "within" not in loc or k[0] in loc["within"]]
-        targets = [(k, default_tok) for k in keys]
+        targets = [(k, default_tok, loc.get("nth")) for k in keys]
     hits, seen = [], set()
-    for key, tok in targets:
+    for key, tok, nth in targets:
         ay = Q[key]; n = 0
         for i, t in enumerate(ay["simple"]):
             if not re.search(tok, t): continue
             if "near" in loc and (i == 0 or not re.search(loc["near"], ay["simple"][i - 1])): continue
             if "next" in loc and (i + 1 >= len(ay["simple"]) or not re.search(loc["next"], ay["simple"][i + 1])): continue
+            if "vocal" in loc and not re.search(loc["vocal"], ay["voc"][i]): continue
+            if "next_vocal" in loc:      # «cross»: the last word may join the first word of the next aya (wasl)
+                nxt = ay["voc"][i + 1] if i + 1 < len(ay["voc"]) else (
+                      Q[(key[0], key[1] + 1)]["voc"][0] if loc.get("cross") and (key[0], key[1] + 1) in Q else "")
+                if not re.search(loc["next_vocal"], nxt): continue
             j = uth_index(ay, i)
             if "uthmani" in loc and not re.search(loc["uthmani"], ay["uth"][j]): continue
             if "uthmani_not" in loc and re.search(loc["uthmani_not"], ay["uth"][j]): continue
             n += 1
-            if "nth" in loc and n != loc["nth"]: continue
+            if nth and n != nth: continue
             if key in excl or key + (n,) in excl: continue
             if (key, i) not in seen:
                 seen.add((key, i)); hits.append((key, i))
@@ -119,10 +125,10 @@ def expand(m):
     return rds
 
 def lafz_at(rd, base):
-    if "lafz" in rd: return rd["lafz"]
+    if "lafz" in rd: return canon(rd["lafz"])
     out = base
     for pat, rep in rd.get("tahwil", []):      # ordered alternatives; at least one must apply
-        out = re.sub(pat, rep, out)
+        out = re.sub(canon(pat), canon(rep), out)
     if rd.get("tahwil") and out == base:
         sys.exit(f"tahwil {rd['tahwil']} did not change «{base}»")
     return out
