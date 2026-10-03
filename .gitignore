@@ -1,2 +1,4 @@
 *.ppk
 *.pem
+app/config.php
+app/data/

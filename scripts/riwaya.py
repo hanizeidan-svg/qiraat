@@ -22,7 +22,7 @@ def main():
     if not rawis: sys.exit(f"unknown: {a.name}. choose from {list(QURRA) + RAWIS}")
 
     con = sqlite3.connect(OUT / "qiraat.db"); con.row_factory = sqlite3.Row
-    rows = con.execute(f"SELECT * FROM qiraat WHERE rawi IN ({','.join('?' * len(rawis))}) "
+    rows = con.execute(f"SELECT * FROM qiraat_v WHERE rawi IN ({','.join('?' * len(rawis))}) "
                        "ORDER BY sura_no, aya_no, word_no, id", rawis).fetchall()
     rows = [dict(r) for r in rows]
     key = lambda r: (r["sura_no"], r["aya_no"], r["word_no"], r["id"])

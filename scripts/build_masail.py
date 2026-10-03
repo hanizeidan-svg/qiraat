@@ -154,8 +154,18 @@ def main():
     assert len(ids) == len(set(ids)), "duplicate ids"
 
     M, W, R = [], [], []          # masail, wide rows, long (per-rawi) rows
+    RD, MW, SRC = [], [], {}      # normalized: reading definitions, mawadi, masala → source file
+    for f in sorted((ROOT / "data" / "masail").glob("*.yaml")):
+        for x in yaml.safe_load(f.read_text(encoding="utf8")): SRC[x["id"]] = f.name
     for m in masail:
         rds = expand(m)
+        for k, rd in enumerate(rds):
+            rd["rid"] = f"{m['id']}#{k + 1}"
+            RD.append({"rid": rd["rid"], "masala_id": m["id"], "ord": k + 1, "by_text": rd["by"],
+                       "lafz": rd.get("lafz", ""),
+                       "tahwil": json.dumps(rd["tahwil"], ensure_ascii=False) if rd.get("tahwil") else "",
+                       "wasf": rd.get("wasf", ""), "hal": rd["hal"], "dalil": rd.get("dalil", m["qawl"]),
+                       "ramz": rd.get("ramz", m.get("rumuz", "")), "rawis": rd["rawis"]})
         hits = locate(m, Q)
         if not hits: sys.exit(f"{m['id']}: no locations found")
         bab = matn[m["bayt"][0]]["bab"]
@@ -166,14 +176,18 @@ def main():
         base = {"id": m["id"], "naw": kind, "bab": bab, "abyat": "، ".join(map(str, m["bayt"])),
                 "qawl": m["qawl"], "kalima": m["word"], "nitaq": m["scope"],
                 "natija": summary(rds), "note": m.get("note", ""), "review": m.get("review", "")}
-        M.append({**base, "nass_albayt": bayt_text, "adad": len(hits)})
+        M.append({**base, "nass_albayt": bayt_text, "adad": len(hits), "rumuz": m.get("rumuz", ""),
+                  "bayt_list": m["bayt"], "src": SRC[m["id"]]})
         for (s, a), i in hits:
             ay = Q[(s, a)]
             word_voc = " ".join(ay["voc"][i:i + span])
+            mid = f"{m['id']}@{s}:{a}:{i + 1}"
             mawdi = {"sura_no": s, "sura": ay["sura"], "aya_no": a, "word_no": i + 1,
                      "aya": " ".join(ay["uth"]), "mawdi": word_voc}
-            # Hafs's readings → used to flag agreement
-            hafs = [k for k, rd in enumerate(rds) if "حفص" in rd["rawis"]]
+            MW.append({"mid": mid, "masala_id": m["id"], **mawdi, "aya_voc": " ".join(ay["voc"])})
+            # Hafs's readings here → a row agrees with Hafs if he has the same lafz and ada' in an overlapping hal
+            hafs = [(lafz_at(rd, word_voc), rd.get("wasf", ""), HALS[rd["hal"]]) for rd in rds if "حفص" in rd["rawis"]]
+            agrees = lambda lf, wasf, hal: any(lf == hl and wasf == hw and HALS[hal] & hh for hl, hw, hh in hafs)
             cells = {r: [] for r in RAWIS}
             for r in RAWIS:
                 mine = [k for k, rd in enumerate(rds) if r in rd["rawis"]]
@@ -181,11 +195,11 @@ def main():
                     rd = rds[k]
                     lf = lafz_at(rd, word_voc)
                     same_hal = [x for x in mine if HALS[rds[x]["hal"]] & HALS[rd["hal"]]]
-                    R.append({**base, **mawdi, "rawi": r, "qari": QARI_OF[r], "lafz": lf, "wasf": rd.get("wasf", ""),
+                    R.append({**base, **mawdi, "mid": mid, "rid": rd["rid"], "rawi": r, "qari": QARI_OF[r], "lafz": lf, "wasf": rd.get("wasf", ""),
                               "hal": rd["hal"],
                               "wajh": f"{same_hal.index(k) + 1} من {len(same_hal)}" if len(same_hal) > 1 else "",
                               "dalil": rd.get("dalil", m["qawl"]), "ramz": rd.get("ramz", m.get("rumuz", "")),
-                              "hafs": "نعم" if set(mine) == set(hafs) else "لا"})
+                              "hafs": "نعم" if agrees(lf, rd.get("wasf", ""), rd["hal"]) else "لا"})
                     h = "" if rd["hal"] == BOTH else f" [{rd['hal']}]"
                     cells[r].append(f"{lf} ({rd.get('wasf', '')}){h}")
             W.append({**base, **mawdi, **{r: " / ".join(cells[r]) for r in RAWIS}})
@@ -232,17 +246,42 @@ def main():
         ws.freeze_panes = "C2"; ws.auto_filter.ref = ws.dimensions
     wb.save(OUT / "qiraat_masail.xlsx")
 
+    write_db(matn, M, RD, MW, R)
+    print(f"\n{len(M)} مسألة، {len(W)} موضع، {len(R)} صف قراءة → {OUT}")
+
+def plain(t):
+    """Strip tashkeel/Quranic marks and unify alef/ya forms, for searching."""
+    t = t.replace("ٱ", "ا").replace("ٰ", "ا")
+    t = MARKS.sub("", t)
+    return re.sub(r"[إأآ]", "ا", t).replace("ى", "ي")
+
+def write_db(matn, M, RD, MW, R):
+    """Content DB for scripts and the PHP app. Regenerated on every build;
+    reviews live in a separate DB owned by the app (app/data/reviews.db)."""
+    import subprocess, datetime
     db = OUT / "qiraat.db"
     db.unlink(missing_ok=True)
     con = sqlite3.connect(db)
-    con.execute("CREATE TABLE matn(n INTEGER PRIMARY KEY, bab TEXT, sadr TEXT, ajz TEXT)")
-    con.executemany("INSERT INTO matn VALUES(?,?,?,?)", [(v["n"], v["bab"], v["sadr"], v["ajz"]) for v in matn.values()])
-    for name, rows, cols in [("masail", M, m_cols), ("qiraat", R, r_cols)]:
-        con.execute(f"CREATE TABLE {name}({', '.join(cols)})")
-        con.executemany(f"INSERT INTO {name} VALUES({','.join('?' * len(cols))})", [[r[c] for c in cols] for r in rows])
-    con.execute("CREATE INDEX qiraat_rawi ON qiraat(rawi, sura_no, aya_no)")
+    con.executescript((ROOT / "scripts" / "schema.sql").read_text(encoding="utf8"))
+    def ins(table, rows):
+        if rows: con.executemany(f"INSERT INTO {table} VALUES({','.join('?' * len(rows[0]))})", rows)
+    ins("qurra", [(q, i + 1) for i, q in enumerate(QURRA)])
+    ins("rawis", [(r, QARI_OF[r], i + 1) for i, r in enumerate(RAWIS)])
+    ins("matn", [(v["n"], v["bab"], v["sadr"], v["ajz"], plain(v["sadr"] + " " + v["ajz"])) for v in matn.values()])
+    ins("masail", [(m["id"], m["naw"], m["bab"], m["abyat"], m["kalima"], plain(m["kalima"]), m["nitaq"], m["qawl"],
+                    m["rumuz"], m["natija"], m["note"], m["review"], m["adad"], m["src"]) for m in M])
+    ins("masala_abyat", [(m["id"], n) for m in M for n in m["bayt_list"]])
+    ins("readings", [(r["rid"], r["masala_id"], r["ord"], r["by_text"], r["lafz"], r["tahwil"], r["wasf"], r["hal"],
+                      r["dalil"], r["ramz"]) for r in RD])
+    ins("reading_rawis", [(r["rid"], rw) for r in RD for rw in r["rawis"]])
+    ins("mawadi", [(w["mid"], w["masala_id"], w["sura_no"], w["sura"], w["aya_no"], w["word_no"], w["mawdi"],
+                    plain(w["mawdi"]), w["aya"], w["aya_voc"]) for w in MW])
+    ins("qiraat", [(r["mid"], r["rid"], r["rawi"], r["lafz"], plain(r["lafz"]), r["wajh"], 1 if r["hafs"] == "نعم" else 0)
+                   for r in R])
+    commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    ins("meta", [("built_at", datetime.datetime.now().isoformat(timespec="seconds")), ("git_commit", commit),
+                 ("masail", str(len(M))), ("mawadi", str(len(MW))), ("qiraat", str(len(R)))])
     con.commit(); con.close()
-    print(f"\n{len(M)} مسألة، {len(W)} موضع، {len(R)} صف قراءة → {OUT}")
 
 if __name__ == "__main__":
     main()
