@@ -6,8 +6,29 @@
 ## البيانات الحالية
 - `data/shatibiyya.json` / `data/shatibiyya.csv`: متن الشاطبية كاملًا مشكولًا (1173 بيتًا) بحقول: `n` رقم البيت، `bab` الباب، `sadr` الصدر، `ajz` العجز.
 
+- `data/text_corrections.json`: تصحيحات موثقة لنص المتن (حاليًا: عجز البيت 466).
+- `data/masail/*.yaml`: المسائل مستخرجة يدويًا من النظم، وكل مسألة فيها: البيت وموضع الشاهد وفك الرموز والكلمة والنطاق والقراءات بأصحابها.
+- `data/out/`: نواتج البناء:
+  - `qiraat_masail.xlsx`: ورقة «الجدول» (صف لكل مسألة × موضع، مع عمود لكل راوٍ من الأربعة عشر) وورقة «المسائل».
+  - `mawadi.csv` و `masail.csv`.
+  - `qiraat.db` (SQLite): جداول `matn` و`masail` و`readings` و`mawadi`، والعرض `jadwal`.
+
+### ما أُنجز
+- فرش البقرة، الأبيات 445–474: 44 مسألة في 457 موضعًا (عيّنة للمراجعة).
+
+### منهج التحقق
+- يتحقق سكربت البناء من أن كل مسألة تغطي الرواة الأربعة عشر، وأن كل اسم قارئ أو راوٍ معروف.
+- تُستخرج المواضع آليًا من نص مصحف حفص (رسم عثماني ونص مجرد من alquran.cloud).
+- الحقل `review` يعلّم ما يحتاج تحريرًا أو مراجعة في المصادر (الوافي، إرشاد المريد، التحريرات).
+
 ## المصادر
 - النص المشكول: [me7me7/Shatibiya](https://github.com/me7me7/Shatibiya) (`الشاطبي.txt`)، في `source/me7_shatibi.txt`.
 - عناوين الأبواب: ويكي مصدر «[كتاب متن الشاطبية](https://ar.wikisource.org/wiki/كتاب_متن_الشاطبية)» (غير مشكول، 1166 بيتًا)، تُحاذى بالمطابقة التقريبية.
 
-إعادة البناء: `python scripts/build_matn.py`
+- نص القرآن: [alquran.cloud](https://alquran.cloud) (`quran-uthmani` و`quran-simple-clean`)، في `source/quran/`.
+
+إعادة البناء (يتطلب `pip install pyyaml openpyxl`):
+```
+python scripts/build_matn.py
+python scripts/build_masail.py
+```

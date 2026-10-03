@@ -15,6 +15,10 @@ for line in (SRC / "me7_shatibi.txt").read_bytes().decode("cp1256").splitlines()
     parts = [p.strip() for p in rest.split("\t") if p.strip()]
     verses.append({"n": int(n), "sadr": parts[0], "ajz": parts[1] if len(parts) > 1 else ""})
 assert [v["n"] for v in verses] == list(range(1, 1174))
+for n, fix in json.loads((ROOT / "data" / "text_corrections.json").read_text(encoding="utf8")).items():
+    v = verses[int(n) - 1]
+    v.update({k: fix[k] for k in ("sadr", "ajz") if k in fix})
+    v["corrected"] = fix["reason"]
 
 # wikisource: sequence of (heading_or_None, verse_text)
 wiki = []
@@ -48,7 +52,7 @@ print("wiki verses:", len(wiki), "unmatched base verses:", unmatched)
 out = ROOT / "data"; out.mkdir(exist_ok=True)
 (out / "shatibiyya.json").write_text(json.dumps(verses, ensure_ascii=False, indent=1), encoding="utf8")
 with open(out / "shatibiyya.csv", "w", encoding="utf-8-sig", newline="") as fh:
-    w = csv.DictWriter(fh, fieldnames=["n", "bab", "sadr", "ajz"]); w.writeheader(); w.writerows(verses)
+    w = csv.DictWriter(fh, fieldnames=["n", "bab", "sadr", "ajz", "corrected"]); w.writeheader(); w.writerows(verses)
 from collections import OrderedDict
 c = OrderedDict()
 for v in verses: c.setdefault(v["bab"], [v["n"], v["n"]])[1] = v["n"]
