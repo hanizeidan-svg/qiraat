@@ -1,10 +1,10 @@
 """Build the masail database from data/masail/*.yaml.
 
 Outputs (data/out/):
-  masail.csv     one row per مسألة
-  mawadi.csv     one row per (مسألة × موضع) with the 14 rawi columns  ← the main table
-  qiraat_masail.xlsx  both tables as sheets
-  qiraat.db      SQLite: matn, masail, readings, mawadi + view jadwal
+  qiraat_masail.xlsx  sheets: القراءات (long, one row per موضع × راوٍ × وجه) ← the core table
+                              الجدول (wide, one row per موضع with 14 rawi columns), المسائل
+  qiraat.csv / jadwal.csv / masail.csv
+  qiraat.db   SQLite: matn, masail, mawadi, qiraat (+ view riwaya)
 """
 import csv, json, re, sqlite3, sys, pathlib, difflib
 import yaml
@@ -16,14 +16,21 @@ RAWIS = ["قالون", "ورش", "البزي", "قنبل", "دوري أبي عم
          "شعبة", "حفص", "خلف", "خلاد", "أبو الحارث", "دوري الكسائي"]
 QURRA = {"نافع": RAWIS[0:2], "ابن كثير": RAWIS[2:4], "أبو عمرو": RAWIS[4:6], "ابن عامر": RAWIS[6:8],
          "عاصم": RAWIS[8:10], "حمزة": RAWIS[10:12], "الكسائي": RAWIS[12:14]}
+QARI_OF = {r: q for q, rs in QURRA.items() for r in rs}
 NAMES = {**QURRA, **{r: [r] for r in RAWIS}}
+WASL, WAQF, BOTH = "وصلًا", "وقفًا", "وصلًا ووقفًا"
+HALS = {WASL: {WASL}, WAQF: {WAQF}, BOTH: {WASL, WAQF}}
 
 # ---------- Quran text ----------
 BASMALA = "بسم الله الرحمن الرحيم"
 MARKS = re.compile(r"[ؐ-ًؚ-ٟۖ-ۭـ﻿]")
+LETTER = re.compile(r"[ء-يٱ]")
+
+def canon(w):
+    """Put shadda before the vowel mark so patterns are stable."""
+    return re.sub(r"([ً-ِ])ّ", "ّ\\1", w)
 
 def skel(s):
-    """Rough consonantal skeleton for aligning uthmani with simple-clean tokens."""
     s = s.replace("ٰ", "ا").replace("ٱ", "ا")
     s = MARKS.sub("", s)
     s = re.sub(r"[إأآا]", "ا", s).replace("ى", "ي").replace("ة", "ه")
@@ -32,15 +39,18 @@ def skel(s):
 def load_quran():
     def load(name):
         return json.loads((ROOT / "source" / "quran" / f"{name}.json").read_text(encoding="utf8"))["data"]["surahs"]
-    simple, uth = load("quran-simple-clean"), load("quran-uthmani")
+    def words(t):
+        return [canon(w) for w in t.replace("﻿", "").split() if LETTER.search(w)]
+    simple, voc, uth = load("quran-simple-clean"), load("quran-simple"), load("quran-uthmani")
     Q = {}
-    for ss, su in zip(simple, uth):
+    for ss, sv, su in zip(simple, voc, uth):
         sname = MARKS.sub("", su["name"]).replace("سورة ", "").strip()
-        for a1, a2 in zip(ss["ayahs"], su["ayahs"]):
-            t1, t2 = a1["text"].replace("﻿", "").split(), a2["text"].replace("﻿", "").split()
+        for a1, a2, a3 in zip(ss["ayahs"], sv["ayahs"], su["ayahs"]):
+            t1, t2, t3 = words(a1["text"]), words(a2["text"]), words(a3["text"])
             if ss["number"] != 1 and a1["numberInSurah"] == 1 and " ".join(t1[:4]) == BASMALA:
-                t1, t2 = t1[4:], t2[4:]
-            Q[(ss["number"], a1["numberInSurah"])] = {"sura": sname, "simple": t1, "uth": t2}
+                t1, t2, t3 = t1[4:], t2[4:], t3[4:]
+            assert len(t1) == len(t2), (ss["number"], a1["numberInSurah"])
+            Q[(ss["number"], a1["numberInSurah"])] = {"sura": sname, "simple": t1, "voc": t2, "uth": t3}
     return Q
 
 def uth_index(ayah, i):
@@ -55,67 +65,82 @@ def uth_index(ayah, i):
 
 # ---------- locating ----------
 def locate(m, Q):
+    """→ list of (key, simple_index)."""
     loc = m["loc"]
     excl = [tuple(e) for e in loc.get("exclude", [])]
-    hits = []
-    if "uthmani" in loc and "search" not in loc and "at" not in loc:      # pure uthmani search
-        rx = re.compile(loc["uthmani"])
-        for key, ay in Q.items():
-            n = 0
-            for j, tok in enumerate(ay["uth"]):
-                if rx.search(tok):
-                    n += 1
-                    if key in excl or key + (n,) in excl: continue
-                    hits.append((key, j))
-        return hits
-    rx = re.compile(loc["search"] if "search" in loc else "^" + loc["token"] + "$")
-    keys = [tuple(k) for k in loc["at"]] if "at" in loc else list(Q)
-    for key in keys:
+    default_tok = loc.get("search") or ("^" + loc["token"] + "$" if "token" in loc else ".")
+    if "at" in loc:
+        targets = [((a[0], a[1]), "^" + a[2] + "$" if len(a) > 2 else default_tok) for a in loc["at"]]
+    else:
+        keys = [k for k in Q if "within" not in loc or k[0] in loc["within"]]
+        targets = [(k, default_tok) for k in keys]
+    hits, seen = [], set()
+    for key, tok in targets:
         ay = Q[key]; n = 0
-        for i, tok in enumerate(ay["simple"]):
-            if not rx.search(tok): continue
+        for i, t in enumerate(ay["simple"]):
+            if not re.search(tok, t): continue
             if "near" in loc and (i == 0 or not re.search(loc["near"], ay["simple"][i - 1])): continue
+            if "next" in loc and (i + 1 >= len(ay["simple"]) or not re.search(loc["next"], ay["simple"][i + 1])): continue
             j = uth_index(ay, i)
-            if "uthmani" in loc and "search" in loc and not re.search(loc["uthmani"], ay["uth"][j]): continue
+            if "uthmani" in loc and not re.search(loc["uthmani"], ay["uth"][j]): continue
             if "uthmani_not" in loc and re.search(loc["uthmani_not"], ay["uth"][j]): continue
             n += 1
             if "nth" in loc and n != loc["nth"]: continue
             if key in excl or key + (n,) in excl: continue
-            hits.append((key, j))
+            if (key, i) not in seen:
+                seen.add((key, i)); hits.append((key, i))
     return hits
 
 # ---------- readings ----------
 def expand(m):
-    """→ {rawi: [qiraa, ...]} ; validates names and full coverage."""
-    per = {r: [] for r in RAWIS}
-    rest = None
+    """→ list of reading dicts, each with 'rawis' resolved (hal-aware «الباقون»). Validates coverage."""
+    rds = []
     for rd in m["readings"]:
-        if rd["by"].strip() == "الباقون":
-            rest = rd["qiraa"]; continue
+        rd = {**rd, "hal": rd.get("hal", BOTH)}
+        if rd["hal"] not in HALS: sys.exit(f"{m['id']}: bad hal «{rd['hal']}»")
+        rds.append(rd)
+    covered = {r: set() for r in RAWIS}
+    for rd in rds:
+        if rd["by"].strip() == "الباقون": continue
+        rs = []
         for name in re.split(r"[،,]\s*", rd["by"]):
             name = name.strip()
             if name not in NAMES: sys.exit(f"{m['id']}: unknown name «{name}»")
-            for r in NAMES[name]:
-                per[r].append(rd["qiraa"])
+            rs += NAMES[name]
+        rd["rawis"] = rs
+        for r in rs: covered[r] |= HALS[rd["hal"]]
+    for rd in rds:                               # «الباقون» resolved in order, per hal
+        if rd["by"].strip() != "الباقون": continue
+        rd["rawis"] = [r for r in RAWIS if not (covered[r] & HALS[rd["hal"]])]
+        for r in rd["rawis"]: covered[r] |= HALS[rd["hal"]]
     for r in RAWIS:
-        if not per[r]:
-            if rest is None: sys.exit(f"{m['id']}: rawi «{r}» has no reading")
-            per[r].append(rest)
-    return per
+        if covered[r] != {WASL, WAQF}:
+            sys.exit(f"{m['id']}: rawi «{r}» lacks {({WASL, WAQF} - covered[r])}")
+    return rds
 
-def summary(per):
-    """Group rawis by identical reading and name whole qurra where possible."""
-    groups = {}
-    for r in RAWIS:
-        for q in per[r]: groups.setdefault(q, []).append(r)
+def lafz_at(rd, base):
+    if "lafz" in rd: return rd["lafz"]
+    out = base
+    for pat, rep in rd.get("tahwil", []):      # ordered alternatives; at least one must apply
+        out = re.sub(pat, rep, out)
+    if rd.get("tahwil") and out == base:
+        sys.exit(f"tahwil {rd['tahwil']} did not change «{base}»")
+    return out
+
+def names_for(rs):
+    """Name whole qurra where both rawis present."""
+    names, left = [], list(rs)
+    for qari, pair in QURRA.items():
+        if all(p in left for p in pair):
+            names.append(qari); left = [x for x in left if x not in pair]
+    return "، ".join(names + left) if len(rs) < 14 else "الجميع"
+
+def summary(rds):
     parts = []
-    for q, rs in groups.items():
-        names, left = [], list(rs)
-        for qari, pair in QURRA.items():
-            if all(p in left for p in pair):
-                names.append(qari); left = [x for x in left if x not in pair]
-        names += left
-        parts.append(f"{q}: {'، '.join(names) if len(rs) < 14 else 'الجميع'}")
+    for rd in rds:
+        if not rd["rawis"]: continue
+        h = "" if rd["hal"] == BOTH else f" [{rd['hal']}]"
+        parts.append(f"{rd.get('lafz') or rd['wasf']}{h}: {names_for(rd['rawis'])}")
     return " | ".join(parts)
 
 # ---------- main ----------
@@ -128,81 +153,96 @@ def main():
     ids = [m["id"] for m in masail]
     assert len(ids) == len(set(ids)), "duplicate ids"
 
-    M_ROWS, W_ROWS = [], []
+    M, W, R = [], [], []          # masail, wide rows, long (per-rawi) rows
     for m in masail:
-        per = expand(m)
+        rds = expand(m)
         hits = locate(m, Q)
         if not hits: sys.exit(f"{m['id']}: no locations found")
-        bayt_text = " ** ".join(f"{matn[n]['sadr']} ... {matn[n]['ajz']}" for n in m["bayt"])
-        res = summary(per)
-        base = {"id": m["id"], "abyat": "، ".join(map(str, m["bayt"])), "bab": matn[m["bayt"][0]]["bab"],
-                "nass_albayt": bayt_text, "qawl": m["qawl"], "rumuz": m.get("rumuz", ""),
-                "kalima": m["word"], "nitaq": m["scope"], "natija": res,
-                "note": m.get("note", ""), "review": m.get("review", "")}
-        M_ROWS.append({**base, "adad_almawadi": len(hits)})
-        for (s, a), j in hits:
+        bab = matn[m["bayt"][0]]["bab"]
+        kind = "فرش" if bab.startswith(("سورة", "ومن سورة")) else "أصول"
+        if kind == "فرش": bab = "فرش " + bab.removeprefix("ومن ")
+        span = m["loc"].get("span", 1)
+        bayt_text = " ** ".join(f"{n}: {matn[n]['sadr']} ... {matn[n]['ajz']}" for n in m["bayt"])
+        base = {"id": m["id"], "naw": kind, "bab": bab, "abyat": "، ".join(map(str, m["bayt"])),
+                "qawl": m["qawl"], "kalima": m["word"], "nitaq": m["scope"],
+                "natija": summary(rds), "note": m.get("note", ""), "review": m.get("review", "")}
+        M.append({**base, "nass_albayt": bayt_text, "adad": len(hits)})
+        for (s, a), i in hits:
             ay = Q[(s, a)]
-            W_ROWS.append({**base, "sura_no": s, "sura": ay["sura"], "aya_no": a,
-                           "aya": " ".join(ay["uth"]), "mawdi": ay["uth"][j],
-                           **{r: " / ".join(per[r]) for r in RAWIS}})
-        print(f"{m['id']}  {len(hits):4} موضع  {m['word']}")
+            word_voc = " ".join(ay["voc"][i:i + span])
+            mawdi = {"sura_no": s, "sura": ay["sura"], "aya_no": a, "word_no": i + 1,
+                     "aya": " ".join(ay["uth"]), "mawdi": word_voc}
+            # Hafs's readings → used to flag agreement
+            hafs = [k for k, rd in enumerate(rds) if "حفص" in rd["rawis"]]
+            cells = {r: [] for r in RAWIS}
+            for r in RAWIS:
+                mine = [k for k, rd in enumerate(rds) if r in rd["rawis"]]
+                for wajh, k in enumerate(mine, 1):
+                    rd = rds[k]
+                    lf = lafz_at(rd, word_voc)
+                    same_hal = [x for x in mine if HALS[rds[x]["hal"]] & HALS[rd["hal"]]]
+                    R.append({**base, **mawdi, "rawi": r, "qari": QARI_OF[r], "lafz": lf, "wasf": rd.get("wasf", ""),
+                              "hal": rd["hal"],
+                              "wajh": f"{same_hal.index(k) + 1} من {len(same_hal)}" if len(same_hal) > 1 else "",
+                              "dalil": rd.get("dalil", m["qawl"]), "ramz": rd.get("ramz", m.get("rumuz", "")),
+                              "hafs": "نعم" if set(mine) == set(hafs) else "لا"})
+                    h = "" if rd["hal"] == BOTH else f" [{rd['hal']}]"
+                    cells[r].append(f"{lf} ({rd.get('wasf', '')}){h}")
+            W.append({**base, **mawdi, **{r: " / ".join(cells[r]) for r in RAWIS}})
+        print(f"{m['id']:7} {kind:5} {len(hits):4} موضع  {m['word']}")
 
     OUT.mkdir(parents=True, exist_ok=True)
-    AR = {"id": "رقم المسألة", "abyat": "رقم البيت", "bab": "الباب", "nass_albayt": "نص البيت",
-          "qawl": "قول الشاطبي", "rumuz": "الرموز", "kalima": "الكلمة", "nitaq": "النطاق",
-          "natija": "النتيجة المعمول بها", "note": "ملاحظة", "review": "للمراجعة",
-          "adad_almawadi": "عدد المواضع", "sura_no": "رقم السورة", "sura": "السورة",
-          "aya_no": "رقم الآية", "aya": "نص الآية", "mawdi": "الكلمة في الآية"}
-    m_cols = ["id", "abyat", "bab", "kalima", "nitaq", "adad_almawadi", "qawl", "rumuz", "natija", "note", "review", "nass_albayt"]
-    w_cols = ["id", "sura_no", "sura", "aya_no", "aya", "mawdi", "abyat", "qawl", "natija", *RAWIS, "nitaq", "note", "review"]
+    AR = {"id": "رقم المسألة", "naw": "النوع", "bab": "الباب", "abyat": "رقم البيت", "nass_albayt": "نص البيت",
+          "qawl": "قول الشاطبي", "kalima": "الكلمة", "nitaq": "النطاق", "natija": "النتيجة المعمول بها",
+          "note": "ملاحظة", "review": "للمراجعة", "adad": "عدد المواضع", "sura_no": "رقم السورة", "sura": "السورة",
+          "aya_no": "رقم الآية", "word_no": "رقم الكلمة", "aya": "نص الآية", "mawdi": "الكلمة في الآية (حفص)",
+          "rawi": "الراوي", "qari": "القارئ", "lafz": "لفظ الراوي", "wasf": "الأداء", "hal": "الحال",
+          "wajh": "الوجه", "dalil": "الدليل من النظم", "ramz": "الرمز", "hafs": "يوافق حفصًا"}
+    r_cols = ["qari", "rawi", "sura_no", "sura", "aya_no", "word_no", "mawdi", "lafz", "wasf", "hal", "wajh", "hafs",
+              "naw", "bab", "id", "abyat", "dalil", "ramz", "note", "review"]
+    w_cols = ["id", "naw", "bab", "sura_no", "sura", "aya_no", "aya", "mawdi", "abyat", "qawl", "natija", *RAWIS, "nitaq", "note", "review"]
+    m_cols = ["id", "naw", "bab", "abyat", "kalima", "nitaq", "adad", "qawl", "natija", "note", "review", "nass_albayt"]
+    order = lambda r: (r["sura_no"], r["aya_no"], r["word_no"], RAWIS.index(r["rawi"]) if "rawi" in r else 0)
+    R.sort(key=order); W.sort(key=order)
 
     def write_csv(path, rows, cols):
         with open(path, "w", encoding="utf-8-sig", newline="") as fh:
             w = csv.writer(fh); w.writerow([AR.get(c, c) for c in cols])
             for r in rows: w.writerow([r[c] for c in cols])
-    write_csv(OUT / "masail.csv", M_ROWS, m_cols)
-    write_csv(OUT / "mawadi.csv", W_ROWS, w_cols)
+    write_csv(OUT / "qiraat.csv", R, r_cols)
+    write_csv(OUT / "jadwal.csv", W, w_cols)
+    write_csv(OUT / "masail.csv", M, m_cols)
+    for old in ("mawadi.csv",):
+        (OUT / old).unlink(missing_ok=True)
 
     from openpyxl import Workbook
     from openpyxl.styles import Font, Alignment, PatternFill
     wb = Workbook()
-    for title, rows, cols in [("الجدول", W_ROWS, w_cols), ("المسائل", M_ROWS, m_cols)]:
-        ws = wb.active if title == "الجدول" else wb.create_sheet()
+    for title, rows, cols in [("القراءات", R, r_cols), ("الجدول", W, w_cols), ("المسائل", M, m_cols)]:
+        ws = wb.active if title == "القراءات" else wb.create_sheet()
         ws.title = title; ws.sheet_view.rightToLeft = True
         ws.append([AR.get(c, c) for c in cols])
         for r in rows: ws.append([r[c] for c in cols])
         for c in ws[1]:
             c.font = Font(bold=True, color="FFFFFF"); c.fill = PatternFill("solid", fgColor="1F4E5F")
         for col in ws.columns:
-            letter = col[0].column_letter
-            width = min(60, max(8, max(len(str(c.value or "")) for c in col[:200]) * 0.9))
-            ws.column_dimensions[letter].width = width
-            for c in col[1:]: c.alignment = Alignment(wrap_text=width >= 60, vertical="top")
-        ws.freeze_panes = "B2"; ws.auto_filter.ref = ws.dimensions
+            width = min(55, max(7, max(len(str(c.value or "")) for c in col[:300]) * 0.9))
+            ws.column_dimensions[col[0].column_letter].width = width
+            for c in col[1:]: c.alignment = Alignment(wrap_text=width >= 55, vertical="top")
+        ws.freeze_panes = "C2"; ws.auto_filter.ref = ws.dimensions
     wb.save(OUT / "qiraat_masail.xlsx")
 
     db = OUT / "qiraat.db"
     db.unlink(missing_ok=True)
     con = sqlite3.connect(db)
-    con.executescript("""
-    CREATE TABLE matn(n INTEGER PRIMARY KEY, bab TEXT, sadr TEXT, ajz TEXT);
-    CREATE TABLE masail(id TEXT PRIMARY KEY, abyat TEXT, bab TEXT, kalima TEXT, nitaq TEXT, qawl TEXT,
-                        rumuz TEXT, natija TEXT, note TEXT, review TEXT);
-    CREATE TABLE readings(masala_id TEXT REFERENCES masail(id), rawi TEXT, qiraa TEXT);
-    CREATE TABLE mawadi(masala_id TEXT REFERENCES masail(id), sura_no INT, sura TEXT, aya_no INT, aya TEXT, mawdi TEXT);
-    CREATE VIEW jadwal AS SELECT w.sura_no, w.sura, w.aya_no, w.aya, w.mawdi, m.abyat, m.qawl, m.natija, m.id
-                          FROM mawadi w JOIN masail m ON m.id = w.masala_id ORDER BY w.sura_no, w.aya_no;
-    """)
+    con.execute("CREATE TABLE matn(n INTEGER PRIMARY KEY, bab TEXT, sadr TEXT, ajz TEXT)")
     con.executemany("INSERT INTO matn VALUES(?,?,?,?)", [(v["n"], v["bab"], v["sadr"], v["ajz"]) for v in matn.values()])
-    con.executemany("INSERT INTO masail VALUES(?,?,?,?,?,?,?,?,?,?)",
-                    [tuple(r[c] for c in ["id", "abyat", "bab", "kalima", "nitaq", "qawl", "rumuz", "natija", "note", "review"]) for r in M_ROWS])
-    for m in masail:
-        for r, qs in expand(m).items():
-            con.executemany("INSERT INTO readings VALUES(?,?,?)", [(m["id"], r, q) for q in qs])
-    con.executemany("INSERT INTO mawadi VALUES(?,?,?,?,?,?)",
-                    [(r["id"], r["sura_no"], r["sura"], r["aya_no"], r["aya"], r["mawdi"]) for r in W_ROWS])
+    for name, rows, cols in [("masail", M, m_cols), ("qiraat", R, r_cols)]:
+        con.execute(f"CREATE TABLE {name}({', '.join(cols)})")
+        con.executemany(f"INSERT INTO {name} VALUES({','.join('?' * len(cols))})", [[r[c] for c in cols] for r in rows])
+    con.execute("CREATE INDEX qiraat_rawi ON qiraat(rawi, sura_no, aya_no)")
     con.commit(); con.close()
-    print(f"\n{len(M_ROWS)} مسألة، {len(W_ROWS)} موضع → {OUT}")
+    print(f"\n{len(M)} مسألة، {len(W)} موضع، {len(R)} صف قراءة → {OUT}")
 
 if __name__ == "__main__":
     main()
