@@ -97,6 +97,100 @@ def locate(m, Q):
                 seen.add((key, i)); hits.append((key, i))
     return hits
 
+# ---------- usul shorthand → readings ----------
+def _names(s):
+    return [x.strip() for x in re.split(r"[،,]", s or "") if x.strip()]
+
+def shorthand(m):
+    """Expand compact usul fields into `readings` (used for the many usul masail taken from al-Budur):
+      imala:  {kubra: names, taqlil: names, khulf: names, hal: "وقفًا"}   khulf → the stated wajh, then الفتح
+      kabir:  true                                                       السوسي بالإدغام، والباقون بالإظهار
+      saghir: {idgham: names, khulf: names}                              khulf → الإدغام ثم الإظهار
+      yaa:    {fath: names} or {iskan: names}, khulf: names              ياء الإضافة (الوقف بالإسكان للجميع)
+      zaida:  {wasl: names, halayn: names, khulf: names}                 ياء زائدة: إثبات وصلًا / في الحالين
+    In every kind, `khulf_rev: names` (a subset of khulf) puts the opposite wajh first for those rawis.
+    """
+    kinds = [k for k in ("imala", "kabir", "saghir", "yaa", "zaida") if k in m]
+    if not kinds: return m
+    if len(kinds) > 1 or "readings" in m:
+        raise SystemExit(f"{m['id']}: use one shorthand ({kinds}) and no explicit readings")
+    k, spec = kinds[0], m[kinds[0]]
+    R = []
+    if k == "imala":
+        hal = spec.get("hal")
+        khulf = set(_names(spec.get("khulf")))
+        for key, wasf in (("kubra", "بالإمالة الكبرى"), ("taqlil", "بالتقليل")):
+            ns = _names(spec.get(key))
+            plain = [n for n in ns if n not in khulf]; kh = [n for n in ns if n in khulf]
+            for group in (plain, kh):
+                if group:
+                    r = {"by": "، ".join(group), "wasf": wasf}
+                    if hal: r["hal"] = hal
+                    R.append(r)
+            for n in kh:
+                r = {"by": n, "wasf": "بالفتح"}
+                if hal: r["hal"] = hal
+                R.append(r)
+        R.append({"by": "الباقون", "wasf": "بالفتح", **({"hal": hal} if hal else {})})
+        if hal == WAQF:
+            R.append({"by": "الباقون", "hal": WASL, "wasf": "لا إمالة في الوصل"})
+    elif k == "kabir":
+        R = [{"by": "السوسي", "wasf": "بالإدغام الكبير"}, {"by": "الباقون", "wasf": "بالإظهار"}]
+    elif k == "saghir":
+        khulf = set(_names(spec.get("khulf")))
+        ns = _names(spec.get("idgham"))
+        plain = [n for n in ns if n not in khulf]
+        if plain: R.append({"by": "، ".join(plain), "wasf": "بالإدغام"})
+        kh = _names(spec.get("khulf"))
+        if kh:
+            R.append({"by": "، ".join(kh), "wasf": "بالإدغام"})
+            R.append({"by": "، ".join(kh), "wasf": "بالإظهار"})
+        R.append({"by": "الباقون", "wasf": "بالإظهار"})
+    elif k == "yaa":
+        khulf = _names(spec.get("khulf"))
+        if "fath" in spec:
+            ns = [n for n in _names(spec["fath"]) if n not in khulf]
+            if ns: R.append({"by": "، ".join(ns), "hal": WASL, "wasf": "بفتح الياء"})
+            if khulf:
+                R.append({"by": "، ".join(khulf), "hal": WASL, "wasf": "بفتح الياء"})
+                R.append({"by": "، ".join(khulf), "hal": WASL, "wasf": "بإسكان الياء"})
+            R.append({"by": "الباقون", "wasf": "بإسكان الياء"})
+        else:
+            ns = [n for n in _names(spec["iskan"]) if n not in khulf]
+            if ns: R.append({"by": "، ".join(ns), "wasf": "بإسكان الياء"})
+            if khulf:
+                R.append({"by": "، ".join(khulf), "hal": WASL, "wasf": "بإسكان الياء"})
+                R.append({"by": "، ".join(khulf), "hal": WASL, "wasf": "بفتح الياء"})
+            R.append({"by": "الباقون", "hal": WASL, "wasf": "بفتح الياء"})
+        R.append({"by": "الباقون", "hal": WAQF, "wasf": "بإسكان الياء"})
+    elif k == "zaida":
+        halayn = _names(spec.get("halayn")); wasl = _names(spec.get("wasl")); khulf = _names(spec.get("khulf"))
+        if halayn: R.append({"by": "، ".join(halayn), "wasf": "بإثبات الياء في الحالين"})
+        w = [n for n in wasl if n not in khulf]
+        if w: R.append({"by": "، ".join(w), "hal": WASL, "wasf": "بإثبات الياء وصلًا"})
+        if khulf:
+            R.append({"by": "، ".join(khulf), "hal": WASL, "wasf": "بإثبات الياء وصلًا"})
+            R.append({"by": "، ".join(khulf), "hal": WASL, "wasf": "بحذف الياء وصلًا"})
+        R.append({"by": "الباقون", "hal": WASL, "wasf": "بحذف الياء"})
+        R.append({"by": "الباقون", "hal": WAQF, "wasf": "بحذف الياء"})
+    rev = set(_names(spec.get("khulf_rev"))) if isinstance(spec, dict) else set()
+    if rev:   # «khulf_rev»: for these rawis the opposite wajh comes first — split them out with the two readings swapped
+        out = []
+        pair = [r for r in R if set(_names(r["by"])) & rev]
+        for r in R:
+            if r in pair:
+                rest = [n for n in _names(r["by"]) if n not in rev]
+                if rest: out.append({**r, "by": "، ".join(rest)})
+            else:
+                out.append(r)
+        mine = [{**r, "by": "، ".join(n for n in _names(r["by"]) if n in rev)} for r in pair]
+        idx = next(i for i, r in enumerate(out) if r["by"] == "الباقون")
+        out[idx:idx] = list(reversed(mine))
+        R = out
+    m = dict(m)
+    m["readings"] = R
+    return m
+
 # ---------- readings ----------
 def expand(m):
     """→ list of reading dicts, each with 'rawis' resolved (hal-aware «الباقون»). Validates coverage."""
@@ -176,6 +270,7 @@ def check(files):
         for m in masail:
             mid = m.get("id", "?")
             try:
+                m = shorthand(m)
                 for key in ("id", "bayt", "qawl", "word", "scope", "loc", "readings"):
                     if key not in m: raise SystemExit(f"missing field «{key}»")
                 if len(all_ids.get(mid, [])) > 1: raise SystemExit(f"duplicate id in {all_ids[mid]}")
@@ -227,6 +322,7 @@ def main():
     masail = []
     for f in sorted((ROOT / "data" / "masail").glob("*.yaml")):
         masail += yaml.safe_load(f.read_text(encoding="utf8"))
+    masail = [shorthand(m) for m in masail]
     ids = [m["id"] for m in masail]
     assert len(ids) == len(set(ids)), "duplicate ids"
 
