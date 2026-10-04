@@ -215,7 +215,7 @@ function open_issue_counts(string $type, array $keys): array
     return $rows;
 }
 
-const TAHRIR_KINDS = ['خروج عن الطريق' => 'k', 'زيادة على النظم' => 'z', 'تنبيه على العبارة' => 't'];
+const TAHRIR_KINDS = ['خروج عن الطريق' => 'k', 'وجه ضعيف' => 'd', 'زيادة على النظم' => 'z', 'تنبيه على العبارة' => 't'];
 
 /** Coloured badges for a «؛»-separated list of tahrir kinds. */
 function tahrir_badges(?string $summary): string

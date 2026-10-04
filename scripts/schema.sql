@@ -26,7 +26,7 @@ CREATE INDEX ix_marji ON marji(masala_id);
 CREATE TABLE iqrar (masala_id TEXT REFERENCES masail(id), ord INTEGER, man TEXT, tarikh TEXT, mawdu TEXT);
 CREATE INDEX ix_iqrar ON iqrar(masala_id);
 
--- تحريرات وتنبيهات: خروج عن الطريق | زيادة على النظم | تنبيه على العبارة
+-- تحريرات وتنبيهات: خروج عن الطريق | وجه ضعيف | زيادة على النظم | تنبيه على العبارة
 CREATE TABLE tahrir (
   masala_id TEXT REFERENCES masail(id), ord INTEGER, naw TEXT,
   rawi TEXT,     -- who it concerns (names as in readings), optional

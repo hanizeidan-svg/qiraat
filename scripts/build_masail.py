@@ -432,7 +432,7 @@ def main():
 
 MARJI_KEYS = {"kitab", "safha", "mawdu"}          # a book source
 IQRAR_KEYS = {"man", "tarikh", "mawdu"}           # the reviewer's own decision (not a source)
-TAHRIR_KINDS = ("خروج عن الطريق", "زيادة على النظم", "تنبيه على العبارة")
+TAHRIR_KINDS = ("خروج عن الطريق", "وجه ضعيف", "زيادة على النظم", "تنبيه على العبارة")
 TAHRIR_KEYS = {"naw", "rawi", "bayan", "hukm", "qawl", "kitab", "safha"}
 
 def iqrar_summary(entries):
