@@ -2,7 +2,8 @@
 (fetched with scripts/fetch_book.py; reference only — the cache is git-ignored and must not be published).
 
   python scripts/wafi.py 740            → the commentary on bayt 740 (with its page numbers)
-  python scripts/wafi.py 740 742        → bayts 740–742
+  python scripts/wafi.py 740 742        → bayts 740–742 (a bayt commented together with the following ones is followed to its commentary)
+  python scripts/wafi.py --search النَّاس  → diacritic-insensitive search with page numbers
 """
 import re, sys, pathlib
 
@@ -28,13 +29,38 @@ def segments():
     if cur_n is not None:
         yield cur_n, cur_page, "\n".join(buf).strip()
 
+NAV = re.compile(r"\s*تحميل الصفحة التالية.*?اذهب", re.S)
+
 def lookup(a, b=None):
+    """Segments for bayts a..b. Al-Wafi often quotes several bayts and comments on them together after the
+    last one: if a requested bayt has no commentary of its own, the following segments are added up to the
+    first one that has commentary."""
     b = b or a
-    out = [(n, p, t) for n, p, t in segments() if a <= n <= b]
+    segs = [(n, p, NAV.sub(" ", t)) for n, p, t in segments()]
+    idx = [i for i, (n, _, _) in enumerate(segs) if a <= n <= b]
+    if not idx: return []
+    last = idx[-1]
+    while last + 1 < len(segs) and len(segs[last][2].splitlines()) <= 1:
+        last += 1
+    return segs[idx[0]:last + 1]
+
+def search(term):
+    """Diacritic-insensitive search → [(page, snippet)]."""
+    strip = lambda s: re.sub(r"[ً-ْٰـ]", "", s)
+    term = strip(term)
+    out = []
+    for f in sorted(CACHE.glob("*.txt")):
+        t = strip(NAV.sub(" ", f.read_text(encoding="utf8")))
+        page = re.match(r"ص(\d+)", t).group(1) if re.match(r"ص\d+", t) else f.stem
+        for m in re.finditer(re.escape(term), t):
+            out.append((page, t[max(0, m.start() - 200):m.start() + 300].replace("\n", " ")))
     return out
 
 if __name__ == "__main__":
     if len(sys.argv) < 2: sys.exit(__doc__)
+    if sys.argv[1] == "--search":
+        for p, s in search(" ".join(sys.argv[2:])): print(f"--- ص{p}\n{s}\n")
+        sys.exit()
     a = int(sys.argv[1]); b = int(sys.argv[2]) if len(sys.argv) > 2 else a
     res = lookup(a, b)
     if not res: sys.exit(f"bayt {a} not found in cache")

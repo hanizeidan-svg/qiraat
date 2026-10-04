@@ -182,8 +182,11 @@ def check(files):
                 for n in m["bayt"]:
                     if n not in matn: raise SystemExit(f"bad bayt {n}")
                 for e in m.get("marji", []):
-                    if not isinstance(e, dict) or not e.get("kitab") or set(e) - MARJI_KEYS:
-                        raise SystemExit(f"bad marji entry {e} (keys: {sorted(MARJI_KEYS)}, kitab required)")
+                    if not isinstance(e, dict) or not e.get("kitab") or set(e) - MARJI_KEYS or "إقرار" in e["kitab"]:
+                        raise SystemExit(f"bad marji entry {e} (a book: keys {sorted(MARJI_KEYS)}; personal decisions go in iqrar)")
+                for e in m.get("iqrar", []):
+                    if not isinstance(e, dict) or not e.get("man") or not e.get("tarikh") or set(e) - IQRAR_KEYS:
+                        raise SystemExit(f"bad iqrar entry {e} (keys: {sorted(IQRAR_KEYS)}, man+tarikh required)")
                 rds = expand(m)
                 hits = locate(m, Q)
                 if not hits: raise SystemExit("no locations found")
@@ -247,7 +250,8 @@ def main():
                 "natija": summary(rds), "note": m.get("note", ""), "review": m.get("review", "")}
         M.append({**base, "nass_albayt": bayt_text, "adad": len(hits), "rumuz": m.get("rumuz", ""),
                   "bayt_list": m["bayt"], "src": SRC[m["id"]], "marji_list": m.get("marji", []),
-                  "marji": marji_summary(m.get("marji", []))})
+                  "marji": marji_summary(m.get("marji", [])), "iqrar_list": m.get("iqrar", []),
+                  "iqrar": iqrar_summary(m.get("iqrar", []))})
         for (s, a), i in hits:
             ay = Q[(s, a)]
             word_voc = " ".join(ay["voc"][i:i + span])
@@ -282,11 +286,11 @@ def main():
           "aya_no": "رقم الآية", "word_no": "رقم الكلمة", "aya": "نص الآية", "mawdi": "الكلمة في الآية (حفص)",
           "rawi": "الراوي", "qari": "القارئ", "lafz": "لفظ الراوي", "wasf": "الأداء", "hal": "الحال",
           "wajh": "الوجه", "dalil": "الدليل من النظم", "ramz": "الرمز", "hafs": "يوافق حفصًا",
-          "marji": "مصدر الاعتماد"}
+          "marji": "مصدر الاعتماد", "iqrar": "إقرار المراجع"}
     r_cols = ["qari", "rawi", "sura_no", "sura", "aya_no", "word_no", "mawdi", "lafz", "wasf", "hal", "wajh", "hafs",
               "naw", "bab", "id", "abyat", "dalil", "ramz", "note", "review"]
     w_cols = ["id", "naw", "bab", "sura_no", "sura", "aya_no", "aya", "mawdi", "abyat", "qawl", "natija", *RAWIS, "nitaq", "note", "review"]
-    m_cols = ["id", "naw", "bab", "abyat", "kalima", "nitaq", "adad", "qawl", "natija", "note", "review", "marji", "nass_albayt"]
+    m_cols = ["id", "naw", "bab", "abyat", "kalima", "nitaq", "adad", "qawl", "natija", "note", "review", "marji", "iqrar", "nass_albayt"]
     order = lambda r: (r["sura_no"], r["aya_no"], r["word_no"], RAWIS.index(r["rawi"]) if "rawi" in r else 0)
     R.sort(key=order); W.sort(key=order)
 
@@ -320,16 +324,15 @@ def main():
     write_db(matn, M, RD, MW, R)
     print(f"\n{len(M)} مسألة، {len(W)} موضع، {len(R)} صف قراءة → {OUT}")
 
-MARJI_KEYS = {"kitab", "safha", "mawdu", "man", "tarikh"}
+MARJI_KEYS = {"kitab", "safha", "mawdu"}          # a book source
+IQRAR_KEYS = {"man", "tarikh", "mawdu"}           # the reviewer's own decision (not a source)
+
+def iqrar_summary(entries):
+    return "؛ ".join(dict.fromkeys(f"{e.get('man', '')} ({e.get('tarikh', '')})" for e in entries))
 
 def marji_summary(entries):
     """«الوافي ص210؛ إقرار المراجع (هاني زيدان، 2026-10-04)»"""
-    out = []
-    for e in entries:
-        if e.get("safha"): out.append(f"{e['kitab']} ص{e['safha']}")
-        elif e.get("man") or e.get("tarikh"):
-            out.append(f"{e['kitab']} ({'، '.join(str(x) for x in (e.get('man'), e.get('tarikh')) if x)})")
-        else: out.append(e["kitab"])
+    out = [f"{e['kitab']} ص{e['safha']}" if e.get("safha") else e["kitab"] for e in entries]
     return "؛ ".join(dict.fromkeys(out))
 
 def plain(t):
@@ -352,7 +355,9 @@ def write_db(matn, M, RD, MW, R):
     ins("rawis", [(r, QARI_OF[r], i + 1) for i, r in enumerate(RAWIS)])
     ins("matn", [(v["n"], v["bab"], v["sadr"], v["ajz"], plain(v["sadr"] + " " + v["ajz"])) for v in matn.values()])
     ins("masail", [(m["id"], m["naw"], m["bab"], m["abyat"], m["kalima"], plain(m["kalima"]), m["nitaq"], m["qawl"],
-                    m["rumuz"], m["natija"], m["note"], m["review"], m["adad"], m["src"], m["marji"]) for m in M])
+                    m["rumuz"], m["natija"], m["note"], m["review"], m["adad"], m["src"], m["marji"], m["iqrar"]) for m in M])
+    ins("iqrar", [(m["id"], k + 1, e.get("man", ""), str(e.get("tarikh", "")), e.get("mawdu", ""))
+                  for m in M for k, e in enumerate(m["iqrar_list"])])
     ins("marji", [(m["id"], k + 1, e.get("kitab", ""), str(e.get("safha", "")), e.get("mawdu", ""), e.get("man", ""),
                    str(e.get("tarikh", ""))) for m in M for k, e in enumerate(m["marji_list"])])
     ins("masala_abyat", [(m["id"], n) for m in M for n in m["bayt_list"]])

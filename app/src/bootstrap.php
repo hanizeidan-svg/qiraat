@@ -43,6 +43,7 @@ function reviews(): PDO
         $pdo->exec(file_get_contents(APP_ROOT . '/sql/reviews.sql'));
         $cols = array_column($pdo->query('PRAGMA table_info(issues)')->fetchAll(), 'name');   // upgrade older DBs
         if (!in_array('resolution_source', $cols, true)) $pdo->exec('ALTER TABLE issues ADD COLUMN resolution_source TEXT');
+        if (!in_array('resolution_iqrar', $cols, true)) $pdo->exec('ALTER TABLE issues ADD COLUMN resolution_iqrar INTEGER NOT NULL DEFAULT 0');
     }
     return $pdo;
 }

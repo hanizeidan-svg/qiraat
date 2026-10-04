@@ -9,6 +9,7 @@ $rr = [];
 foreach (q(content(), 'SELECT rr.rid, rr.rawi FROM reading_rawis rr JOIN readings d ON d.rid = rr.rid JOIN rawis r ON r.name = rr.rawi WHERE d.masala_id = ? ORDER BY r.ord', [$id]) as $x) $rr[$x['rid']][] = $x['rawi'];
 $mawadi = q(content(), 'SELECT * FROM mawadi WHERE masala_id = ? ORDER BY sura_no, aya_no, word_no', [$id])->fetchAll();
 $marji = q(content(), 'SELECT * FROM marji WHERE masala_id = ? ORDER BY ord', [$id])->fetchAll();
+$iqrar = q(content(), 'SELECT * FROM iqrar WHERE masala_id = ? ORDER BY ord', [$id])->fetchAll();
 $issues = q(reviews(), 'SELECT i.*, u.display_name FROM issues i JOIN users u ON u.id = i.created_by WHERE i.masala_id = ? ORDER BY i.id DESC', [$id])->fetchAll();
 $fields = TARGET_FIELDS['masala'];
 ?>
@@ -33,12 +34,21 @@ $fields = TARGET_FIELDS['masala'];
 <h2>مصدر الاعتماد</h2>
 <?php if ($marji): ?>
 <table class="grid">
-  <thead><tr><th>المصدر</th><th>الصفحة</th><th>ما اعتُمد فيه</th><th>المراجع</th><th>التاريخ</th></tr></thead>
+  <thead><tr><th>المصدر</th><th>الصفحة</th><th>ما اعتُمد فيه</th></tr></thead>
   <?php foreach ($marji as $s): ?>
-    <tr><td><?= h($s['kitab']) ?></td><td><?= h($s['safha']) ?></td><td class="small"><?= h($s['mawdu']) ?></td><td><?= h($s['man']) ?></td><td class="nowrap"><?= h($s['tarikh']) ?></td></tr>
+    <tr><td><?= h($s['kitab']) ?></td><td><?= h($s['safha']) ?></td><td class="small"><?= h($s['mawdu']) ?></td></tr>
   <?php endforeach ?>
 </table>
 <?php else: ?><p class="muted">مستخرجة من النظم، ولم تُراجَع على مصدر بعد.</p><?php endif ?>
+<?php if ($iqrar): ?>
+<h3>إقرار المراجع <small class="muted">(قرار المراجع، وليس مصدرًا)</small></h3>
+<table class="grid">
+  <thead><tr><th>المراجع</th><th>التاريخ</th><th>ما أقرّه</th></tr></thead>
+  <?php foreach ($iqrar as $s): ?>
+    <tr><td><?= h($s['man']) ?></td><td class="nowrap"><?= h($s['tarikh']) ?></td><td class="small"><?= h($s['mawdu']) ?></td></tr>
+  <?php endforeach ?>
+</table>
+<?php endif ?>
 
 <h2>القراءات</h2>
 <table class="grid">
