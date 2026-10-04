@@ -2,3 +2,4 @@
 *.pem
 app/config.php
 app/data/
+source/books/
