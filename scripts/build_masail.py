@@ -174,6 +174,8 @@ def shorthand(m):
         R.append({"by": "الباقون", "hal": WASL, "wasf": "بحذف الياء"})
         R.append({"by": "الباقون", "hal": WAQF, "wasf": "بحذف الياء"})
     rev = set(_names(spec.get("khulf_rev"))) if isinstance(spec, dict) else set()
+    if k == "imala" and "ورش" in _names(spec.get("khulf")):
+        rev ^= {"ورش"}   # ورش: الفتح ثم التقليل افتراضًا (قرار المراجع)؛ و khulf_rev له يقدّم التقليل
     if rev:   # «khulf_rev»: for these rawis the opposite wajh comes first — split them out with the two readings swapped
         out = []
         pair = [r for r in R if set(_names(r["by"])) & rev]
