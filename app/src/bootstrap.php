@@ -215,6 +215,18 @@ function open_issue_counts(string $type, array $keys): array
     return $rows;
 }
 
+const TAHRIR_KINDS = ['خروج عن الطريق' => 'k', 'زيادة على النظم' => 'z', 'تنبيه على العبارة' => 't'];
+
+/** Coloured badges for a «؛»-separated list of tahrir kinds. */
+function tahrir_badges(?string $summary): string
+{
+    $out = '';
+    foreach (array_filter(explode('؛ ', (string)$summary)) as $k) {
+        $out .= '<span class="tg tg-' . (TAHRIR_KINDS[$k] ?? 't') . '" title="' . h($k) . '">' . h($k) . '</span> ';
+    }
+    return $out;
+}
+
 function report_link(string $type, string $key, string $label = '⚑'): string
 {
     if (!user()) return '';

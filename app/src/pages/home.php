@@ -4,6 +4,7 @@ $db = content();
 $stats = q($db, "SELECT naw, COUNT(*) n, SUM(adad) w FROM masail GROUP BY naw")->fetchAll();
 $babs = q($db, "SELECT bab, naw, COUNT(*) n, SUM(adad) w, MIN(CAST(abyat AS INTEGER)) a FROM masail GROUP BY bab ORDER BY a")->fetchAll();
 $byStatus = q(reviews(), 'SELECT status, COUNT(*) FROM issues GROUP BY status')->fetchAll(PDO::FETCH_KEY_PAIR);
+$byTahrir = q($db, 'SELECT naw, COUNT(DISTINCT masala_id) FROM tahrir GROUP BY naw')->fetchAll(PDO::FETCH_KEY_PAIR);
 ?>
 <section class="hero">
   <h1>مسائل «حرز الأماني ووجه التهاني»</h1>
@@ -39,6 +40,12 @@ $byStatus = q(reviews(), 'SELECT status, COUNT(*) FROM issues GROUP BY status')-
     </table>
   </div>
   <div>
+    <h2>التحريرات والتنبيهات</h2>
+    <table class="grid">
+      <?php foreach (TAHRIR_KINDS as $k => $_): ?>
+        <tr><td><a href="<?= h(url(['p' => 'masail', 'tahrir' => $k])) ?>"><?= tahrir_badges($k) ?></a></td><td><?= (int)($byTahrir[$k] ?? 0) ?></td></tr>
+      <?php endforeach ?>
+    </table>
     <h2>المراجعة</h2>
     <table class="grid">
       <?php foreach (ISSUE_STATUS as $k => $label): ?>

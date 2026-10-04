@@ -11,7 +11,8 @@ CREATE TABLE masail (
   id TEXT PRIMARY KEY, naw TEXT, bab TEXT, abyat TEXT, kalima TEXT, kalima_plain TEXT, nitaq TEXT,
   qawl TEXT, rumuz TEXT, natija TEXT, note TEXT, review TEXT, adad INTEGER, src_file TEXT,
   marji TEXT,                          -- summary of the sources the ruling was settled on (see table marji)
-  iqrar TEXT);                         -- summary of the reviewer's own decisions (see table iqrar) — not a source
+  iqrar TEXT,                          -- summary of the reviewer's own decisions (see table iqrar) — not a source
+  tahrir TEXT);                        -- kinds of tahrir notes on this masala (see table tahrir)
 CREATE TABLE masala_abyat (masala_id TEXT REFERENCES masail(id), bayt INTEGER REFERENCES matn(n));
 
 -- مصدر الاعتماد: the source each ruling / review decision was settled on
@@ -25,10 +26,22 @@ CREATE INDEX ix_marji ON marji(masala_id);
 CREATE TABLE iqrar (masala_id TEXT REFERENCES masail(id), ord INTEGER, man TEXT, tarikh TEXT, mawdu TEXT);
 CREATE INDEX ix_iqrar ON iqrar(masala_id);
 
+-- تحريرات وتنبيهات: خروج عن الطريق | زيادة على النظم | تنبيه على العبارة
+CREATE TABLE tahrir (
+  masala_id TEXT REFERENCES masail(id), ord INTEGER, naw TEXT,
+  rawi TEXT,     -- who it concerns (names as in readings), optional
+  bayan TEXT,    -- what the nazm says / the added wajh / what is meant
+  hukm TEXT,     -- e.g. «لا يقرأ به»
+  qawl TEXT,     -- the verifiers' wording (short)
+  kitab TEXT, safha TEXT);
+CREATE INDEX ix_tahrir ON tahrir(masala_id);
+CREATE INDEX ix_tahrir_naw ON tahrir(naw);
+
 -- one row per reading as defined in YAML (who reads it and how)
 CREATE TABLE readings (
   rid TEXT PRIMARY KEY, masala_id TEXT REFERENCES masail(id), ord INTEGER, by_text TEXT,
-  lafz TEXT, tahwil TEXT, wasf TEXT, hal TEXT, dalil TEXT, ramz TEXT);
+  lafz TEXT, tahwil TEXT, wasf TEXT, hal TEXT, dalil TEXT, ramz TEXT,
+  ziyada INTEGER NOT NULL DEFAULT 0);  -- 1 = a wajh added by the verifiers beyond the nazm (زيادة على النظم)
 CREATE TABLE reading_rawis (rid TEXT REFERENCES readings(rid), rawi TEXT REFERENCES rawis(name));
 
 CREATE TABLE mawadi (
@@ -50,6 +63,6 @@ CREATE INDEX ix_ab     ON masala_abyat(bayt);
 CREATE VIEW qiraat_v AS
 SELECT q.mid, q.rid, q.rawi, r.qari, w.sura_no, w.sura, w.aya_no, w.word_no, w.mawdi, w.aya,
        q.lafz, d.wasf, d.hal, q.wajh, CASE q.hafs WHEN 1 THEN 'نعم' ELSE 'لا' END AS hafs,
-       m.id, m.naw, m.bab, m.abyat, d.dalil, d.ramz, m.note, m.review, m.marji, m.iqrar
+       m.id, m.naw, m.bab, m.abyat, d.dalil, d.ramz, m.note, m.review, m.marji, m.iqrar, m.tahrir, d.ziyada
 FROM qiraat q JOIN mawadi w ON w.mid = q.mid JOIN readings d ON d.rid = q.rid
 JOIN masail m ON m.id = w.masala_id JOIN rawis r ON r.name = q.rawi;

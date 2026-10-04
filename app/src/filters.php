@@ -23,6 +23,7 @@ function filters(): array
         'khilaf' => !empty($_GET['khilaf']),
         'hal'    => in_array($_GET['hal'] ?? '', ['وصلًا', 'وقفًا'], true) ? $_GET['hal'] : '',
         'review' => !empty($_GET['review']),
+        'tahrir' => array_key_exists($_GET['tahrir'] ?? '', TAHRIR_KINDS) || ($_GET['tahrir'] ?? '') === '*' ? $_GET['tahrir'] : '',
         'page'   => max(1, (int)($_GET['page'] ?? 1)),
     ];
 }
@@ -51,6 +52,8 @@ function where_mawadi(array $f, array &$params): string
         $w[] = '(w.mawdi_plain LIKE ? OR m.kalima_plain LIKE ? OR EXISTS (SELECT 1 FROM qiraat qk WHERE qk.mid = w.mid AND qk.lafz_plain LIKE ?))';
         array_push($params, $kw, $kw, $kw);
     }
+    if ($f['tahrir'] === '*') $w[] = "m.tahrir <> ''";
+    elseif ($f['tahrir'] !== '') { $w[] = 'm.id IN (SELECT masala_id FROM tahrir WHERE naw = ?)'; $params[] = $f['tahrir']; }
     if ($f['review']) {
         $ids = q(reviews(), "SELECT DISTINCT masala_id FROM issues WHERE status = 'open' AND masala_id IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN);
         $w[] = "(m.review <> '' OR m.id IN (" . in_list($ids, $params) . '))';
@@ -70,7 +73,7 @@ function find_mawadi(array $f, ?int $limit = null): array
     $where = where_mawadi($f, $params);
     $total = (int)q(content(), "SELECT COUNT(*) FROM mawadi w JOIN masail m ON m.id = w.masala_id WHERE $where", $params)->fetchColumn();
     $limit ??= (int)cfg('page_size');
-    $sql = "SELECT w.*, m.bab, m.naw, m.abyat, m.kalima, m.review, m.natija, m.marji FROM mawadi w JOIN masail m ON m.id = w.masala_id
+    $sql = "SELECT w.*, m.bab, m.naw, m.abyat, m.kalima, m.review, m.natija, m.marji, m.tahrir FROM mawadi w JOIN masail m ON m.id = w.masala_id
             WHERE $where ORDER BY w.sura_no, w.aya_no, w.word_no, m.id LIMIT $limit OFFSET " . (($f['page'] - 1) * $limit);
     return [q(content(), $sql, $params)->fetchAll(), $total];
 }
@@ -80,7 +83,7 @@ function readings_at(array $mids, array $f): array
 {
     if (!$mids) return [];
     $params = [];
-    $sql = 'SELECT q.mid, q.rid, q.rawi, q.lafz, q.wajh, q.hafs, d.wasf, d.hal, d.dalil, d.ramz, d.ord
+    $sql = 'SELECT q.mid, q.rid, q.rawi, q.lafz, q.wajh, q.hafs, d.wasf, d.hal, d.dalil, d.ramz, d.ord, d.ziyada
             FROM qiraat q JOIN readings d ON d.rid = q.rid JOIN rawis r ON r.name = q.rawi
             WHERE q.mid IN (' . in_list($mids, $params) . ') AND q.rawi IN (' . in_list($f['rawis'], $params) . ')
               AND d.hal IN (' . in_list(hal_values($f), $params) . ')
@@ -166,6 +169,8 @@ function filter_form(array $f, string $page): string
     <label>المسألة <input type="text" name="masala" value="<?= h($f['masala']) ?>" class="num" placeholder="2-021"></label>
     <label class="chk"><input type="checkbox" name="khilaf" value="1" <?= $f['khilaf'] ? 'checked' : '' ?>> ما خالف حفصًا فقط</label>
     <label class="chk"><input type="checkbox" name="review" value="1" <?= $f['review'] ? 'checked' : '' ?>> ما عليه مراجعة</label>
+    <label>التحرير <select name="tahrir"><option value="">الكل</option><option value="*" <?= $f['tahrir'] === '*' ? 'selected' : '' ?>>كل ما فيه تحرير أو تنبيه</option>
+      <?php foreach (TAHRIR_KINDS as $k => $_): ?><option <?= $f['tahrir'] === $k ? 'selected' : '' ?>><?= h($k) ?></option><?php endforeach ?></select></label>
     <button type="submit">عرض</button>
     <a class="btn ghost" href="<?= h(url(['p' => $page])) ?>">مسح</a>
   </div>

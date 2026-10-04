@@ -118,3 +118,8 @@ ol.mawadi-list { columns: 3 16rem; }
 details.fbox > summary { cursor: pointer; color: var(--muted); margin-bottom: .4rem; }
 details.fbox[open] > summary { display: none; }
 @media (max-width: 700px) { details.fbox[open] > summary { display: list-item; } main { padding: .6rem; } table.readings td.lafz { white-space: normal; } }
+
+.tg { font-size: .75rem; padding: 0 .45rem; border-radius: 10px; color: #fff; white-space: nowrap; font-family: var(--ui); }
+.tg-k { background: #a12d2d; }   /* خروج عن الطريق */
+.tg-z { background: #2a6db0; }   /* زيادة على النظم */
+.tg-t { background: #b4730a; }   /* تنبيه على العبارة */
