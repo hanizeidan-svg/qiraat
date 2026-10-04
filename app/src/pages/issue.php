@@ -15,8 +15,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash('أُضيف التعليق.');
     } elseif (in_array($action, ['accepted', 'rejected', 'open', 'applied'], true)) {
         require_admin();
-        q(reviews(), 'UPDATE issues SET status = ?, resolved_by = ?, resolved_at = datetime(\'now\'), resolution_note = ? WHERE id = ?',
-          [$action, user()['id'], $body !== '' ? $body : $i['resolution_note'], $id]);
+        $source = trim((string)($_POST['source'] ?? ''));
+        if (in_array($action, ['accepted', 'rejected'], true) && $source === '' && !$i['resolution_source']) {
+            flash('اذكر مصدر القرار (مثل: الوافي ص 236، أو إقرار المراجع).', 'err');
+            redirect(url(['p' => 'issue', 'id' => $id]));
+        }
+        q(reviews(), 'UPDATE issues SET status = ?, resolved_by = ?, resolved_at = datetime(\'now\'), resolution_note = ?, resolution_source = ? WHERE id = ?',
+          [$action, user()['id'], $body !== '' ? $body : $i['resolution_note'], $source !== '' ? $source : $i['resolution_source'], $id]);
         if ($body !== '') q(reviews(), 'INSERT INTO issue_comments (issue_id, user_id, body) VALUES (?,?,?)', [$id, user()['id'], '[' . ISSUE_STATUS[$action] . '] ' . $body]);
         flash('حُدِّثت الحالة: ' . ISSUE_STATUS[$action]);
     }
@@ -40,6 +45,7 @@ $fieldLabel = TARGET_FIELDS[$i['target_type']][$i['field']] ?? $i['field'];
   <dt>التعليل</dt><dd><?= nl2br(h($i['comment'])) ?: '—' ?></dd>
   <dt>المُبلِّغ</dt><dd><?= h($i['display_name']) ?> · <?= h($i['created_at']) ?> · نسخة المحتوى <?= h($i['content_commit']) ?></dd>
   <?php if ($i['resolver']): ?><dt>الفصل</dt><dd><?= h($i['resolver']) ?> · <?= h($i['resolved_at']) ?><?= $i['resolution_note'] ? ' — ' . h($i['resolution_note']) : '' ?></dd><?php endif ?>
+  <?php if ($i['resolution_source']): ?><dt>مصدر القرار</dt><dd><?= h($i['resolution_source']) ?></dd><?php endif ?>
 </dl>
 
 <h2>النقاش</h2>
@@ -52,6 +58,11 @@ $fieldLabel = TARGET_FIELDS[$i['target_type']][$i['field']] ?? $i['field'];
 <form method="post" class="form">
   <?= csrf_field() ?>
   <label>تعليق<?= is_admin() ? ' / ملاحظة الفصل' : '' ?> <textarea name="body" rows="3"></textarea></label>
+  <?php if (is_admin()): ?>
+  <label>مصدر القرار (مطلوب عند القبول أو الرفض)
+    <input name="source" list="sources" value="<?= h($i['resolution_source']) ?>" placeholder="الوافي ص 236 — أو: إقرار المراجع"></label>
+  <datalist id="sources"><option value="الوافي ص "><option value="الإضاءة ص "><option value="إقرار المراجع"></datalist>
+  <?php endif ?>
   <div class="row">
     <button name="action" value="comment">إضافة تعليق</button>
     <?php if (is_admin()): ?>

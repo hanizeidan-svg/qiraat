@@ -10,10 +10,10 @@ if (($_GET['format'] ?? '') === 'csv') {
     header('Content-Disposition: attachment; filename="qiraat.csv"');
     $out = fopen('php://output', 'w');
     fwrite($out, "\xEF\xBB\xBF");
-    fputcsv($out, ['السورة', 'رقم السورة', 'الآية', 'الكلمة (حفص)', 'الراوي', 'القارئ', 'اللفظ', 'الأداء', 'الحال', 'الوجه', 'يوافق حفصًا', 'الباب', 'المسألة', 'البيت', 'الدليل', 'الرمز']);
+    fputcsv($out, ['السورة', 'رقم السورة', 'الآية', 'الكلمة (حفص)', 'الراوي', 'القارئ', 'اللفظ', 'الأداء', 'الحال', 'الوجه', 'يوافق حفصًا', 'الباب', 'المسألة', 'البيت', 'الدليل', 'الرمز', 'مصدر الاعتماد']);
     foreach ($rows as $w) foreach ($rd[$w['mid']] ?? [] as $rawi => $list) foreach ($list as $x) {
         fputcsv($out, [$w['sura'], $w['sura_no'], $w['aya_no'], $w['mawdi'], $rawi, rawis()[$rawi]['qari'], $x['lafz'], $x['wasf'], $x['hal'],
-                       $x['wajh'], $x['hafs'] ? 'نعم' : 'لا', $w['bab'], $w['masala_id'], $w['abyat'], $x['dalil'], $x['ramz']]);
+                       $x['wajh'], $x['hafs'] ? 'نعم' : 'لا', $w['bab'], $w['masala_id'], $w['abyat'], $x['dalil'], $x['ramz'], $w['marji']]);
     }
     exit;
 }

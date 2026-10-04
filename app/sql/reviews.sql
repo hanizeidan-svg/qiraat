@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS issues (
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
   resolved_by     INTEGER REFERENCES users(id),
   resolved_at     TEXT,
-  resolution_note TEXT
+  resolution_note TEXT,
+  resolution_source TEXT                -- مصدر القرار: الكتاب والصفحة، أو «إقرار المراجع»
 );
 CREATE INDEX IF NOT EXISTS ix_issues_target ON issues(target_type, target_key);
 CREATE INDEX IF NOT EXISTS ix_issues_masala ON issues(masala_id);

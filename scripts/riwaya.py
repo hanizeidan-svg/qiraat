@@ -48,12 +48,14 @@ def main():
             dal = sorted({(x["abyat"], x["dalil"], x["ramz"]) for x in g})
             for ab, dl, rz in dal:
                 md.append(f"  - الدليل (البيت {ab}): «{dl}»" + (f" — الرمز: {rz}" if rz and rz != "—" else ""))
+            if r0["marji"]:
+                md.append(f"  - مصدر الاعتماد: {r0['marji']}")
             for rw in rawis:
                 for x in by_rawi[rw]:
                     flat.append({"الراوي": rw, "السورة": r0["sura"], "الآية": r0["aya_no"], "الكلمة": r0["mawdi"],
                                  "لفظه": x["lafz"], "الأداء": x["wasf"], "الحال": x["hal"], "الوجه": x["wajh"],
                                  "يوافق حفصًا": x["hafs"], "الباب": x["bab"], "البيت": x["abyat"],
-                                 "الدليل": x["dalil"], "الرمز": x["ramz"], "المسألة": x["id"]})
+                                 "الدليل": x["dalil"], "الرمز": x["ramz"], "المسألة": x["id"], "مصدر الاعتماد": x["marji"]})
         md.append("")
     md.insert(4, f"عدد المواضع: {n}")
 

@@ -41,6 +41,8 @@ function reviews(): PDO
         ]);
         $pdo->exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
         $pdo->exec(file_get_contents(APP_ROOT . '/sql/reviews.sql'));
+        $cols = array_column($pdo->query('PRAGMA table_info(issues)')->fetchAll(), 'name');   // upgrade older DBs
+        if (!in_array('resolution_source', $cols, true)) $pdo->exec('ALTER TABLE issues ADD COLUMN resolution_source TEXT');
     }
     return $pdo;
 }

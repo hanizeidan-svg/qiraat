@@ -70,7 +70,7 @@ function find_mawadi(array $f, ?int $limit = null): array
     $where = where_mawadi($f, $params);
     $total = (int)q(content(), "SELECT COUNT(*) FROM mawadi w JOIN masail m ON m.id = w.masala_id WHERE $where", $params)->fetchColumn();
     $limit ??= (int)cfg('page_size');
-    $sql = "SELECT w.*, m.bab, m.naw, m.abyat, m.kalima, m.review, m.natija FROM mawadi w JOIN masail m ON m.id = w.masala_id
+    $sql = "SELECT w.*, m.bab, m.naw, m.abyat, m.kalima, m.review, m.natija, m.marji FROM mawadi w JOIN masail m ON m.id = w.masala_id
             WHERE $where ORDER BY w.sura_no, w.aya_no, w.word_no, m.id LIMIT $limit OFFSET " . (($f['page'] - 1) * $limit);
     return [q(content(), $sql, $params)->fetchAll(), $total];
 }

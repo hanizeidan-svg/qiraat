@@ -9,8 +9,16 @@ CREATE TABLE matn   (n INTEGER PRIMARY KEY, bab TEXT, sadr TEXT, ajz TEXT, plain
 
 CREATE TABLE masail (
   id TEXT PRIMARY KEY, naw TEXT, bab TEXT, abyat TEXT, kalima TEXT, kalima_plain TEXT, nitaq TEXT,
-  qawl TEXT, rumuz TEXT, natija TEXT, note TEXT, review TEXT, adad INTEGER, src_file TEXT);
+  qawl TEXT, rumuz TEXT, natija TEXT, note TEXT, review TEXT, adad INTEGER, src_file TEXT,
+  marji TEXT);                         -- summary of the sources the ruling was settled on (see table marji)
 CREATE TABLE masala_abyat (masala_id TEXT REFERENCES masail(id), bayt INTEGER REFERENCES matn(n));
+
+-- مصدر الاعتماد: the source each ruling / review decision was settled on
+CREATE TABLE marji (
+  masala_id TEXT REFERENCES masail(id), ord INTEGER,
+  kitab TEXT,    -- الوافي | الإضاءة | إقرار المراجع | ...
+  safha TEXT, mawdu TEXT, man TEXT, tarikh TEXT);
+CREATE INDEX ix_marji ON marji(masala_id);
 
 -- one row per reading as defined in YAML (who reads it and how)
 CREATE TABLE readings (
@@ -37,6 +45,6 @@ CREATE INDEX ix_ab     ON masala_abyat(bayt);
 CREATE VIEW qiraat_v AS
 SELECT q.mid, q.rid, q.rawi, r.qari, w.sura_no, w.sura, w.aya_no, w.word_no, w.mawdi, w.aya,
        q.lafz, d.wasf, d.hal, q.wajh, CASE q.hafs WHEN 1 THEN 'نعم' ELSE 'لا' END AS hafs,
-       m.id, m.naw, m.bab, m.abyat, d.dalil, d.ramz, m.note, m.review
+       m.id, m.naw, m.bab, m.abyat, d.dalil, d.ramz, m.note, m.review, m.marji
 FROM qiraat q JOIN mawadi w ON w.mid = q.mid JOIN readings d ON d.rid = q.rid
 JOIN masail m ON m.id = w.masala_id JOIN rawis r ON r.name = q.rawi;
