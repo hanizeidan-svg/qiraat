@@ -20,6 +20,10 @@ def segments():
         page = re.match(r"ص(\d+)", lines[0]).group(1) if lines and re.match(r"ص\d+", lines[0]) else f.stem
         for line in lines[2:]:
             m = HEAD.match(line)
+            # a real bayt line has the hemistich separator «...» and its number moves forward;
+            # numbered lists inside the commentary («٥ - مذهب هشام…») and the table of contents do not
+            if m and ("..." not in line or (cur_n is not None and int(m.group(1).translate(AR)) <= cur_n)):
+                m = None
             if m:
                 if cur_n is not None:
                     yield cur_n, cur_page, "\n".join(buf).strip()
@@ -37,12 +41,15 @@ def lookup(a, b=None):
     first one that has commentary."""
     b = b or a
     segs = [(n, p, NAV.sub(" ", t)) for n, p, t in segments()]
-    idx = [i for i, (n, _, _) in enumerate(segs) if a <= n <= b]
-    if not idx: return []
-    last = idx[-1]
-    while last + 1 < len(segs) and len(segs[last][2].splitlines()) <= 1:
-        last += 1
-    return segs[idx[0]:last + 1]
+    keep = []
+    for i, (n, _, _) in enumerate(segs):
+        if not (a <= n <= b): continue
+        j = i
+        keep.append(j)
+        while j + 1 < len(segs) and len(segs[j][2].splitlines()) <= 1:   # bare bayt line → follow to the commentary
+            j += 1
+            keep.append(j)
+    return [segs[i] for i in dict.fromkeys(keep)]
 
 def search(term):
     """Diacritic-insensitive search → [(page, snippet)]."""
