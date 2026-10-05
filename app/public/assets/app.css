@@ -122,5 +122,6 @@ details.fbox[open] > summary { display: none; }
 .tg { font-size: .75rem; padding: 0 .45rem; border-radius: 10px; color: #fff; white-space: nowrap; font-family: var(--ui); }
 .tg-k { background: #a12d2d; }   /* خروج عن الطريق */
 .tg-d { background: #7a4e9c; }   /* وجه ضعيف */
+.tg-l { background: #5b6b73; }   /* ليس عليه العمل */
 .tg-z { background: #2a6db0; }   /* زيادة على النظم */
 .tg-t { background: #b4730a; }   /* تنبيه على العبارة */
