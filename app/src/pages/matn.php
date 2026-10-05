@@ -3,6 +3,7 @@ $title = 'المتن';
 $kw = trim((string)($_GET['kw'] ?? ''));
 $n = (int)($_GET['n'] ?? 0);
 $bab = trim((string)($_GET['bab'] ?? ''));
+$muq = ($_GET['q'] ?? '1') !== '0';               // مقطّع (الافتراضي) / غير مقطّع
 $babs = q(content(), 'SELECT bab, MIN(n) a, MAX(n) b FROM matn GROUP BY bab ORDER BY a')->fetchAll();
 if ($n && !$bab) $bab = (string)q(content(), 'SELECT bab FROM matn WHERE n = ?', [$n])->fetchColumn();
 if ($bab === '' && $kw === '') $bab = $babs[0]['bab'];
@@ -14,6 +15,7 @@ $abyat = q(content(), "SELECT * FROM matn WHERE $where ORDER BY n", $params)->fe
 $links = [];
 foreach (q(content(), 'SELECT a.bayt, m.id, m.kalima FROM masala_abyat a JOIN masail m ON m.id = a.masala_id') as $x) $links[$x['bayt']][] = $x;
 $issues = open_issue_counts('bayt', array_map('strval', array_column($abyat, 'n')));
+$parts = $muq ? qita_parts(array_column($abyat, 'n')) : [];
 ?>
 <h1>متن الشاطبية</h1>
 <form class="filters" method="get">
@@ -23,15 +25,23 @@ $issues = open_issue_counts('bayt', array_map('strval', array_column($abyat, 'n'
       <?php foreach ($babs as $b): ?><option value="<?= h($b['bab']) ?>" <?= $bab === $b['bab'] ? 'selected' : '' ?>><?= h($b['bab']) ?> (<?= $b['a'] ?>–<?= $b['b'] ?>)</option><?php endforeach ?>
     </select></label>
     <label class="grow">بحث في المتن (بلا تشكيل) <input type="search" name="kw" value="<?= h($kw) ?>"></label>
+    <input type="hidden" name="q" value="<?= $muq ? '1' : '0' ?>">
     <button>بحث</button>
   </div>
 </form>
-<p class="muted"><?= count($abyat) ?> بيتًا</p>
+<p class="muted"><?= count($abyat) ?> بيتًا ·
+  <span class="qtoggle"><?php if ($muq): ?><b>مقطّع</b> | <a href="<?= h(url(['p' => 'matn', 'bab' => $bab, 'kw' => $kw, 'q' => '0'])) ?>">غير مقطّع</a>
+  <?php else: ?><a href="<?= h(url(['p' => 'matn', 'bab' => $bab, 'kw' => $kw, 'q' => '1'])) ?>">مقطّع</a> | <b>غير مقطّع</b><?php endif ?></span>
+  <?php if ($muq): ?><span class="small">— الشرطة « / » عند حدود المسائل؛ انقر قطعة لعرض مسائلها.</span><?php endif ?></p>
 <section class="matn-box">
   <?php foreach ($abyat as $b): ?>
     <div class="bayt quran <?= $b['n'] === $n ? 'hl' : '' ?>" id="b<?= $b['n'] ?>">
       <span class="n"><?= $b['n'] ?></span>
+      <?php if ($muq): ?>
+      <span class="sadr"><?= hemistich_q($parts[$b['n']][0] ?? []) ?></span><span class="ajz"><?= hemistich_q($parts[$b['n']][1] ?? []) ?></span>
+      <?php else: ?>
       <span class="sadr"><?= h($b['sadr']) ?></span><span class="ajz"><?= h($b['ajz']) ?></span>
+      <?php endif ?>
       <span class="meta">
         <?php foreach ($links[$b['n']] ?? [] as $l): ?><a class="chip" href="<?= h(url(['p' => 'masala', 'id' => $l['id']])) ?>"><?= h($l['id']) ?></a><?php endforeach ?>
         <?php if (!empty($issues[(string)$b['n']])): ?><span class="badge warn"><?= $issues[(string)$b['n']] ?> ⚑</span><?php endif ?>

@@ -13,6 +13,9 @@ $iqrar = q(content(), 'SELECT * FROM iqrar WHERE masala_id = ? ORDER BY ord', [$
 $tahrir = q(content(), 'SELECT * FROM tahrir WHERE masala_id = ? ORDER BY ord', [$id])->fetchAll();
 $issues = q(reviews(), 'SELECT i.*, u.display_name FROM issues i JOIN users u ON u.id = i.created_by WHERE i.masala_id = ? ORDER BY i.id DESC', [$id])->fetchAll();
 $fields = TARGET_FIELDS['masala'];
+$qita = q(content(), 'SELECT q.*, mq.exact FROM masala_qita mq JOIN qita q ON q.id = mq.qita_id WHERE mq.masala_id = ? ORDER BY q.id', [$id])->fetchAll();
+$parts = qita_parts(array_column($abyat, 'n'));
+$hl = array_map('intval', array_column($qita, 'id'));
 ?>
 <h1>المسألة <?= h($m['id']) ?>: <span class="quran"><?= h($m['kalima']) ?></span> <?= tahrir_badges($m['tahrir']) ?> <?= report_link('masala', $m['id'], '⚑ إبلاغ') ?></h1>
 <p class="muted"><?= h($m['bab']) ?> · <?= h($m['nitaq']) ?> · <?= $m['adad'] ?> موضع · المصدر: <code><?= h($m['src_file']) ?></code></p>
@@ -20,12 +23,13 @@ $fields = TARGET_FIELDS['masala'];
 <section class="matn-box">
   <?php foreach ($abyat as $b): ?>
     <div class="bayt quran"><span class="n"><a href="<?= h(url(['p' => 'matn', 'n' => $b['n']])) ?>#b<?= $b['n'] ?>"><?= $b['n'] ?></a></span>
-      <span class="sadr"><?= h($b['sadr']) ?></span><span class="ajz"><?= h($b['ajz']) ?></span></div>
+      <span class="sadr"><?= hemistich_q($parts[$b['n']][0] ?? [], $hl) ?></span><span class="ajz"><?= hemistich_q($parts[$b['n']][1] ?? [], $hl) ?></span></div>
   <?php endforeach ?>
 </section>
 
 <dl class="kv">
   <dt>قول الشاطبي</dt><dd class="quran"><?= h($m['qawl']) ?></dd>
+  <dt>القطعة من المتن</dt><dd><?php foreach ($qita as $x): ?><a class="chip" href="<?= h(url(['p' => 'qita', 'id' => $x['id']])) ?>">قطعة <?= $x['id'] ?></a> <span class="quran"><?= h($x['nass']) ?></span><?= $x['exact'] ? '' : ' <span class="badge warn" title="لم يُعثر على الشاهد حرفيًّا في المتن؛ رُبطت المسألة بقطع أبياتها">تقريبي</span>' ?><br><?php endforeach ?></dd>
   <?php if ($m['rumuz']): ?><dt>الرموز</dt><dd><?= h($m['rumuz']) ?></dd><?php endif ?>
   <dt>النتيجة المعمول بها</dt><dd><?= h($m['natija']) ?></dd>
   <?php if ($m['note']): ?><dt>ملاحظة</dt><dd><?= h($m['note']) ?></dd><?php endif ?>

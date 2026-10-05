@@ -253,6 +253,9 @@ def _cmp(t):
     return re.sub(r"[إأآ]", "ا", t).replace("ى", "ي")
 
 def check(files):
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import qita as QT
+    QT.parse()                                   # data/matn_muqatta.txt must reproduce the matn exactly
     """python scripts/build_masail.py --check data/masail/X.yaml ...
     Validates the given files: names, 14-rawi coverage, locations, tahwil, and that Hafs's reading
     matches the mushaf text. Writes nothing."""
@@ -461,7 +464,29 @@ def write_db(matn, M, RD, MW, R):
         if rows: con.executemany(f"INSERT INTO {table} VALUES({','.join('?' * len(rows[0]))})", rows)
     ins("qurra", [(q, i + 1) for i, q in enumerate(QURRA)])
     ins("rawis", [(r, QARI_OF[r], i + 1) for i, r in enumerate(RAWIS)])
-    ins("matn", [(v["n"], v["bab"], v["sadr"], v["ajz"], plain(v["sadr"] + " " + v["ajz"])) for v in matn.values()])
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import qita as QT
+    QW, cuts = QT.parse(matn)
+    segs = QT.segments(matn, QW, cuts)
+    pos = QT.word_pos(QW)
+    halves = {}                                    # (bayt, half) → words with « / » at cuts
+    for i, (n, h, w) in enumerate(QW):
+        halves.setdefault((n, h), []).extend(["/", w] if i in cuts else [w])
+    ins("matn", [(v["n"], v["bab"], v["sadr"], v["ajz"], plain(v["sadr"] + " " + v["ajz"]),
+                  " ".join(halves[(v["n"], 0)]), " ".join(halves[(v["n"], 1)])) for v in matn.values()])
+    parts = []
+    for sid, bab, a, b in segs:
+        cur = None
+        for i in range(a, b + 1):
+            n, h, w = QW[i]
+            if cur and cur[1:3] == [n, h]: cur[4].append(w)
+            else:
+                cur = [sid, n, h, 1 if i in cuts else 0, [w]]; parts.append(cur)
+    ins("qita", [(sid, bab, QW[a][0], pos[a], QW[b][0], pos[b], QT.seg_text(QW, a, b), plain(QT.seg_text(QW, a, b)))
+                 for sid, bab, a, b in segs])
+    ins("qita_parts", [(p[0], p[1], p[2], p[3], " ".join(p[4])) for p in parts])
+    mq, _ = QT.link(matn, QW, segs, [{"id": m["id"], "bayt": m["bayt_list"], "qawl": m["qawl"]} for m in M])
+    ins("masala_qita", [(mid, sid, ex) for mid, xs in mq.items() for sid, ex in xs])
     ins("masail", [(m["id"], m["naw"], m["bab"], m["abyat"], m["kalima"], plain(m["kalima"]), m["nitaq"], m["qawl"],
                     m["rumuz"], m["natija"], m["note"], m["review"], m["adad"], m["src"], m["marji"], m["iqrar"], m["tahrir"]) for m in M])
     ins("tahrir", [(m["id"], k + 1, e["naw"], e.get("rawi", ""), e.get("bayan", ""), e.get("hukm", ""), e.get("qawl", ""),

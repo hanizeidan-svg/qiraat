@@ -11,7 +11,7 @@ $openIssues = (int)q(reviews(), "SELECT COUNT(*) FROM issues WHERE status = 'ope
 <title><?= h(($title ? "$title — " : '') . cfg('site_title')) ?></title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@400;600&display=swap">
-<link rel="stylesheet" href="assets/app.css?v=1">
+<link rel="stylesheet" href="assets/app.css?v=2">
 </head>
 <body>
 <header class="top">
@@ -38,6 +38,6 @@ $openIssues = (int)q(reviews(), "SELECT COUNT(*) FROM issues WHERE status = 'ope
 <footer>
   بيانات المحتوى: <?= h(meta('masail')) ?> مسألة · <?= h(meta('mawadi')) ?> موضع · بُنيت <?= h(meta('built_at')) ?><?= meta('git_commit') ? ' · ' . h(meta('git_commit')) : '' ?>
 </footer>
-<script src="assets/app.js?v=1"></script>
+<script src="assets/app.js?v=2"></script>
 </body>
 </html>

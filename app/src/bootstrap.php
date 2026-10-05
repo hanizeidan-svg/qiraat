@@ -232,3 +232,25 @@ function report_link(string $type, string $key, string $label = '⚑'): string
     if (!user()) return '';
     return '<a class="flag" title="إبلاغ عن خطأ" href="' . h(url(['p' => 'report', 'type' => $type, 'key' => $key])) . '">' . h($label) . '</a>';
 }
+
+/** qita_parts rows for the given bayts → [bayt][half] = [rows in order]. */
+function qita_parts(array $bayts): array
+{
+    $out = [];
+    if (!$bayts) return $out;
+    $in = implode(',', array_fill(0, count($bayts), '?'));
+    foreach (q(content(), "SELECT * FROM qita_parts WHERE bayt IN ($in) ORDER BY bayt, half, rowid", array_values($bayts)) as $p) $out[$p['bayt']][$p['half']][] = $p;
+    return $out;
+}
+
+/** One hemistich, cut into its qita pieces (« / » at each explicit cut); $hl = qita ids to highlight. */
+function hemistich_q(array $parts, array $hl = []): string
+{
+    $out = [];
+    foreach ($parts as $p) {
+        $cls = 'qita' . (in_array((int)$p['qita_id'], $hl, true) ? ' qhl' : '');
+        $out[] = ($p['cut'] ? '<span class="qsep">/</span> ' : '')
+               . '<a class="' . $cls . '" data-q="' . (int)$p['qita_id'] . '" href="' . h(url(['p' => 'qita', 'id' => $p['qita_id']])) . '">' . h($p['text']) . '</a>';
+    }
+    return implode(' ', $out);
+}

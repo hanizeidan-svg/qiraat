@@ -5,7 +5,17 @@ CREATE TABLE meta   (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE qurra  (name TEXT PRIMARY KEY, ord INTEGER);
 CREATE TABLE rawis  (name TEXT PRIMARY KEY, qari TEXT REFERENCES qurra(name), ord INTEGER);
 
-CREATE TABLE matn   (n INTEGER PRIMARY KEY, bab TEXT, sadr TEXT, ajz TEXT, plain TEXT);
+CREATE TABLE matn   (n INTEGER PRIMARY KEY, bab TEXT, sadr TEXT, ajz TEXT, plain TEXT,
+  sadr_q TEXT, ajz_q TEXT);           -- the same with « / » at the qita cuts (data/matn_muqatta.txt)
+
+-- قطع المتن: the matn cut at masala boundaries (data/matn_muqatta.txt; bab starts are implicit cuts).
+-- w_from / w_to: word position inside the bayt, 0-based over sadr+ajz. A qita may run across bayts.
+CREATE TABLE qita (id INTEGER PRIMARY KEY, bab TEXT, bayt_from INTEGER, w_from INTEGER, bayt_to INTEGER, w_to INTEGER,
+  nass TEXT, plain TEXT);
+CREATE TABLE qita_parts (qita_id INTEGER REFERENCES qita(id), bayt INTEGER REFERENCES matn(n), half INTEGER,
+  cut INTEGER,                         -- 1 = the qita starts here with an explicit « / »
+  text TEXT);
+CREATE INDEX ix_qp ON qita_parts(bayt);
 
 CREATE TABLE masail (
   id TEXT PRIMARY KEY, naw TEXT, bab TEXT, abyat TEXT, kalima TEXT, kalima_plain TEXT, nitaq TEXT,
@@ -14,6 +24,10 @@ CREATE TABLE masail (
   iqrar TEXT,                          -- summary of the reviewer's own decisions (see table iqrar) — not a source
   tahrir TEXT);                        -- kinds of tahrir notes on this masala (see table tahrir)
 CREATE TABLE masala_abyat (masala_id TEXT REFERENCES masail(id), bayt INTEGER REFERENCES matn(n));
+-- the qita(s) a masala's quote (qawl) falls in; exact = 0 when the quote was not found verbatim (linked by bayt)
+CREATE TABLE masala_qita (masala_id TEXT REFERENCES masail(id), qita_id INTEGER REFERENCES qita(id), exact INTEGER);
+CREATE INDEX ix_mq_m ON masala_qita(masala_id);
+CREATE INDEX ix_mq_q ON masala_qita(qita_id);
 
 -- مصدر الاعتماد: the source each ruling / review decision was settled on
 CREATE TABLE marji (

@@ -14,3 +14,10 @@ document.querySelectorAll('[data-all],[data-none]').forEach(b => b.addEventListe
 
 // على الشاشات الصغيرة تبدأ التصفية مطويّة
 if (matchMedia('(max-width: 700px)').matches) document.querySelectorAll('details.fbox').forEach(d => d.open = false);
+
+// قطع المتن: إبراز أجزاء القطعة الواحدة معًا (قد تمتد عبر الأبيات)
+document.querySelectorAll('a.qita').forEach(a => {
+  const all = () => document.querySelectorAll(`a.qita[data-q="${a.dataset.q}"]`);
+  a.addEventListener('mouseenter', () => all().forEach(x => x.classList.add('qhover')));
+  a.addEventListener('mouseleave', () => all().forEach(x => x.classList.remove('qhover')));
+});
