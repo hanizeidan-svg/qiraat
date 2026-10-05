@@ -179,7 +179,8 @@ def wafi_quotes():
     import wafi
     for n, _, t in wafi.segments():
         for q in re.findall(r"\(([^()]{3,80})\)", t):
-            if re.search(r"[ء-ي]", q) and not re.search(r"\d", q): yield n, q
+            # a masala usually opens with «و/ف…» and a few words; one-word quotes are rumuz glosses
+            if len(q.split()) >= 3 and re.match(r"[وف]", q.strip()) and not re.search(r"\d", q): yield n, q
 
 def review():
     matn = load_matn(); W, cuts = parse(matn); segs = segments(matn, W, cuts)
